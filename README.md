@@ -12,19 +12,21 @@ payments reads as a chain. It's built for live demos, such as x402 payments:
 start it, make some payments, and the audience watches the balances move.
 
 ```text
-basewatch  Base mainnet  block 59,297,849  up 00:04:12  ● live
-history since block 59,296,614 (19:54:58) · base-rpc.publicnode.com · q or Ctrl-C quits and prints a summary
+basewatch  Base mainnet  block 59,297,849  up 00:04:12  ⚑ green flag · live
+history since block 59,296,614 (19:54:58) · base-rpc.publicnode.com
 
-━━ buyer  0xebDbdC98C7AA8DA34f2A443Dd4C8895D05cDBA3E  key from $X402_BUYER_PRIVATE_KEY ━━━━━━━━━━━━━━━━━━━━
+━━ 1 buyer  0xebDbdC98C7AA8DA34f2A443Dd4C8895D05cDBA3E  key from $X402_BUYER_PRIVATE_KEY ━━━━━━━━━━━━━━━━━━
    USDC  2.202000 → 2.201000 → 2.200000 → 2.190000           █▇▆▁  net -0.012000  3 changes
    ETH   0.00000000   no change
    19:55:10  USDC  2.202000 ──▶ 2.201000  -0.001000  to seller       0x9f3a…c1d0
    19:55:31  USDC  2.201000 ──▶ 2.200000  -0.001000  to seller       0x41bd…77e2
  ▶ 19:56:02  USDC  2.200000 ──▶ 2.190000  -0.010000  to 0x7c21…a9f3  0x0d3e…9b12
 
-━━ seller  0x1234…  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━ 2 seller  0x1234…  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    USDC  0.000000 → 0.001000 → 0.002000                       ▁█  net +0.002000  2 changes
    ...
+
+ 1–2 open a wallet on basescan.org · t opens the newest transaction · q quits and prints a summary
 ```
 
 - The **balance line** shows the starting value, every value it moved to, and
@@ -32,12 +34,18 @@ history since block 59,296,614 (19:54:58) · base-rpc.publicnode.com · q or Ctr
 - Each **row** is one change: the time, the value before and after, the
   difference, and the other party. A payment between two watched wallets shows
   on both, under their labels.
-- **New changes** are marked with a yellow ▶ for 8 seconds. Add `--bell` to
-  ring the terminal bell as well.
-- Transaction hashes are **clickable links** to basescan in terminals that
-  support links (iTerm2, VS Code, Warp, kitty, WezTerm).
-- When you quit, a **summary** with the full history and full basescan links is
-  printed, so it stays in your scrollback.
+- **New changes** wash in on a small wave, then stay marked with a yellow ▶
+  for 8 seconds. Add `--bell` to ring the terminal bell as well, or
+  `--no-wave` to skip the wave.
+- **Explorer pages are a keypress away**, so no URLs clutter the screen. Press
+  a wallet's number to open it on basescan, or `t` to open the newest
+  transaction. Addresses and transaction hashes are also clickable links in
+  terminals that support them (iTerm2, VS Code, Warp, kitty, WezTerm).
+- **The connection is a lifeguard flag**: green when live, yellow while one
+  failed call is retried, red with the error when calls keep failing.
+- When you quit, an **end-of-shift summary** with the full history and full
+  explorer links for every wallet and transaction is printed, so it stays in
+  your scrollback.
 
 ## Install
 
@@ -58,7 +66,7 @@ Each wallet can end with `=label`:
 
 | Wallet              | Meaning                                                              |
 | ------------------- | -------------------------------------------------------------------- |
-| `0xADDRESS`         | an existing wallet (a `basescan.org/address/…` URL works too)        |
+| `0xADDRESS`         | an existing wallet (an explorer's `/address/…` URL works too)        |
 | `new`               | a brand-new wallet, created now and tracked from zero                |
 | `env:VAR`           | the wallet whose private key is in `$VAR`; the key is never shown    |
 | `keychain:SERVICE`  | the wallet whose private key is in macOS Keychain item `SERVICE`     |
@@ -93,6 +101,16 @@ basewatch --plain 0xebDb…=buyer | tee demo.log
 basewatch --json  0xebDb…=buyer > demo.ndjson
 ```
 
+### Keys
+
+In the full-screen view:
+
+| Key         | Effect                                           |
+| ----------- | ------------------------------------------------ |
+| `1`–`9`     | open that wallet on the explorer                 |
+| `t`         | open the newest transaction on the explorer      |
+| `q`, Ctrl-C | quit and print the end-of-shift summary          |
+
 ### Options
 
 | Option              | Effect                                                                  |
@@ -103,7 +121,10 @@ basewatch --json  0xebDb…=buyer > demo.ndjson
 | `--confirmations N` | stay N blocks behind the newest (default 2, which is 0.4 s on Base)     |
 | `--plain`           | one line per change, append-only; the default when output isn't a terminal |
 | `--json`            | one JSON object per line: `start`, `change`, `error`, `summary`         |
+| `--explorer NAME`   | where links and keys open: `basescan` (default), `blockscout`, or the base URL of another explorer |
 | `--bell`            | ring the terminal bell on each change                                   |
+| `--no-wave`         | show new changes without the wave                                       |
+| `--no-logo`         | no logo, splash or iTerm2 badge                                         |
 | `--no-color`        | no colors (`NO_COLOR` works too)                                        |
 | `--no-links`        | no clickable links                                                      |
 | `--key-dir DIR`     | where new keys are saved (default `./.wallets`)                         |
@@ -111,6 +132,15 @@ basewatch --json  0xebDb…=buyer > demo.ndjson
 | `--show-key`        | show new private keys on screen                                         |
 | `--no-save`         | don't write key files (needs `--show-key` or `--keychain`)              |
 | `--create-only`     | create the wallets, print how to use them, and exit                     |
+
+## The logo in your terminal
+
+In terminals that can show images (iTerm2, WezTerm, kitty, Ghostty), the
+logo shows on a splash screen while basewatch connects, then stays small in the
+corner of the live view. `--help` opens with it too. iTerm2 also gets a faint
+"BaseWatch" badge. The tab title reads `🛟 basewatch · buyer, seller`, and
+switches to 🚩 when the RPC keeps failing. Everything is restored on quit.
+Other terminals, tmux included, get no images. `--no-logo` turns it all off.
 
 ## Private keys
 

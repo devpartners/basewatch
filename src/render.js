@@ -1,12 +1,45 @@
 // Everything the user sees: the live screen, plain lines, JSON, summaries.
 import { formatUnits } from 'viem'
 import {
-  fmtAmount, sparkline, visibleLength, truncate, padEnd, padStart, link,
+  fmtAmount, sparkline, visibleLength, truncate, sliceVisible, padEnd, padStart, link,
   clock, duration, num, shortAddr, shortHash,
 } from './format.js'
 import { rpcHost } from './chain.js'
 
 const FRESH_MS = 8000
+export const WAVE_MS = 900
+const CREST = ['▁', '▂', '▄', '▆', '█', '▇', '▅', '▃', '▂']
+const SEA = [
+  [20, 70, 160], [30, 110, 200], [40, 150, 230], [120, 200, 255], [230, 245, 255],
+  [120, 200, 255], [40, 150, 230], [30, 110, 200], [20, 70, 160],
+]
+
+// A row partway through washing in: its text up to the wave, then the wave.
+export function washIn(style, row, progress) {
+  const head = Math.floor(Math.max(0, progress) * (visibleLength(row) + CREST.length))
+  const start = head - CREST.length
+  let out = start > 0 ? sliceVisible(row, start) : ''
+  for (let i = Math.max(0, -start); i < CREST.length; i++) out += style.rgb(...SEA[i])(CREST[i])
+  return out
+}
+
+function host(url) {
+  try {
+    return new URL(url).host
+  } catch {
+    return url
+  }
+}
+
+// Connection status as a lifeguard flag. One failed call is retried quietly,
+// so it shows yellow without the error; red means calls keep failing.
+export function flag(ui) {
+  const s = ui.style
+  const st = ui.watcher.status
+  if (!st.failures) return s.green('⚑ green flag · live')
+  if (st.ok) return s.yellow('⚑ yellow flag · retrying')
+  return s.red(`⚑ red flag · ${st.error}; retrying`)
+}
 
 function amount(ui, symbol, v, opts) {
   const a = ui.tracker.asset(symbol)
@@ -30,7 +63,7 @@ function origin(ui, w) {
 }
 
 function txRef(ui, t, full = false) {
-  const url = t.tx ? `${ui.net.explorer}/tx/${t.tx}` : `${ui.net.explorer}/block/${t.block}`
+  const url = t.tx ? `${ui.explorer}/tx/${t.tx}` : `${ui.explorer}/block/${t.block}`
   if (full) return url
   return link(url, t.tx ? shortHash(t.tx) : `block ${num(t.block)}`, ui.links)
 }
@@ -93,7 +126,7 @@ function assetLine(ui, w, symbol, width) {
 }
 
 // One row per transition, columns aligned so from ──▶ to reads at a glance.
-function rows(ui, list, { now = Date.now(), highlight = true, fullUrls = false } = {}) {
+function rows(ui, list, { now = Date.now(), highlight = true, fullUrls = false, waves = null } = {}) {
   const s = ui.style
   const cells = list.map((t) => ({
     t,
@@ -108,7 +141,7 @@ function rows(ui, list, { now = Date.now(), highlight = true, fullUrls = false }
     const c = t.delta > 0n ? s.green : s.red
     const fresh = highlight && now - t.seenAt < FRESH_MS
     const time = clock(t.time ?? t.seenAt)
-    return [
+    const row = [
       fresh ? s.bold(s.yellow(' ▶ ')) : '   ',
       fresh ? s.bold(s.yellow(time)) : s.dim(time),
       '  ', t.asset.padEnd(4), '  ',
@@ -117,6 +150,8 @@ function rows(ui, list, { now = Date.now(), highlight = true, fullUrls = false }
       '  ', padEnd(w, ww),
       '  ', s.dim(txRef(ui, t, fullUrls)),
     ].join('')
+    const since = waves?.get(t.seq)
+    return since === undefined || now - since >= WAVE_MS ? row : washIn(s, row, (now - since) / WAVE_MS)
   })
 }
 
@@ -137,26 +172,39 @@ function share(budget, need) {
   return alloc
 }
 
-export function renderFrame(ui, { width, height, now = Date.now() }) {
+// Keys and messages for the bottom line of the live screen.
+function footer(ui, now) {
+  const s = ui.style
+  if (ui.flash && now < ui.flash.until) return s.yellow(` ${ui.flash.text}`)
+  if (!ui.keys) return s.dim(' Ctrl-C quits and prints a summary')
+  const n = Math.min(ui.tracker.wallets.length, 9)
+  const open = n > 1 ? `1–${n} open a wallet` : '1 opens the wallet'
+  return s.dim(` ${open} on ${host(ui.explorer)} · t opens the newest transaction · q quits and prints a summary`)
+}
+
+// The live screen, one string per row. `mark` ({ rows, cols }) keeps the
+// top-left corner free for the logo: the header lines start past it.
+export function renderFrame(ui, { width, height, now = Date.now(), mark = null }) {
   const s = ui.style
   const { tracker, watcher } = ui
   const W = Math.max(40, width - 1)
-  const status = watcher.status.ok ? s.green('● live') : s.red(`● ${watcher.status.error}; retrying`)
+  const skip = mark ? `\x1b[${mark.cols}C` : ''
   const lines = [
-    `${s.bold('basewatch')}  ${ui.net.name}  ${s.dim('block')} ${num(watcher.head ?? tracker.lastBlock)}  ${s.dim('up')} ${duration(now - ui.startedAt)}  ${status}`,
-    s.dim(`history since block ${num(tracker.startBlock)} (${clock(tracker.startTime)}) · ${rpcHost(ui.rpcUrl)} · q or Ctrl-C quits and prints a summary`),
+    `${s.bold('basewatch')}  ${ui.net.name}  ${s.dim('block')} ${num(watcher.head ?? tracker.lastBlock)}  ${s.dim('up')} ${duration(now - ui.startedAt)}  ${flag(ui)}`,
+    s.dim(`history since block ${num(tracker.startBlock)} (${clock(tracker.startTime)}) · ${rpcHost(ui.rpcUrl)}`),
     '',
-  ]
+  ].map((l) => skip + truncate(l, W - (mark ? mark.cols : 0)))
   const fixed = tracker.wallets.reduce((n, w) => n + 2 + (w.key ? 1 : 0) + tracker.assets.length, 0)
   const alloc = share(
-    Math.max(0, height - lines.length - fixed),
+    Math.max(0, height - lines.length - fixed - 1),
     tracker.wallets.map((w) => Math.max(1, w.transitions.length)),
   )
 
   tracker.wallets.forEach((w, i) => {
     const fresh = w.transitions.some((t) => now - t.seenAt < FRESH_MS)
     const label = fresh ? s.bold(s.yellow(w.label)) : s.bold(w.label)
-    const title = ` ${label}  ${link(`${ui.net.explorer}/address/${w.address}`, w.address, ui.links)}  ${origin(ui, w)} `
+    const key = ui.keys && i < 9 ? `${s.dim(String(i + 1))} ` : ''
+    const title = ` ${key}${label}  ${link(`${ui.explorer}/address/${w.address}`, w.address, ui.links)}  ${origin(ui, w)} `
     lines.push(s.dim('━━') + title + s.dim('━'.repeat(Math.max(2, W - 2 - visibleLength(title)))))
     if (w.key) lines.push(`   ${s.yellow('private key')}  ${w.key}`)
     for (const a of tracker.assets) lines.push(assetLine(ui, w, a.symbol, W))
@@ -164,16 +212,19 @@ export function renderFrame(ui, { width, height, now = Date.now() }) {
     if (n > 0 && !w.transitions.length) lines.push(s.dim('   waiting for changes…'))
     else if (n > 0) {
       const hidden = w.transitions.length - n
+      const opts = { now, waves: ui.waves }
       if (hidden > 0 && n >= 2) {
         lines.push(s.dim(`   ⋮ ${hidden + 1} earlier changes`))
-        lines.push(...rows(ui, w.transitions.slice(-(n - 1)), { now }))
+        lines.push(...rows(ui, w.transitions.slice(-(n - 1)), opts))
       } else {
-        lines.push(...rows(ui, w.transitions.slice(-n), { now }))
+        lines.push(...rows(ui, w.transitions.slice(-n), opts))
       }
     }
     lines.push('')
   })
-  return lines.slice(0, height).map((l) => truncate(l, W))
+  const body = lines.slice(0, Math.max(0, height - 1)).map((l) => truncate(l, W))
+  while (body.length < height - 1) body.push('')
+  return [...body, truncate(footer(ui, now), W)]
 }
 
 export function renderPlainStart(ui) {
@@ -210,10 +261,11 @@ export function renderSummary(ui, { width = 120, now = Date.now(), maxRows = 50 
   const s = ui.style
   const t = ui.tracker
   const out = [
-    `${s.bold('basewatch summary')}  ${ui.net.name}  ${s.dim('ran')} ${duration(now - ui.startedAt)}  ${s.dim(`blocks ${num(t.startBlock)} → ${num(t.lastBlock)}`)}`,
+    `${s.bold('basewatch · end-of-shift summary')}  ${ui.net.name}  ${s.dim('ran')} ${duration(now - ui.startedAt)}  ${s.dim(`blocks ${num(t.startBlock)} → ${num(t.lastBlock)}`)}`,
   ]
   for (const w of t.wallets) {
     out.push('', `${s.bold(w.label)}  ${w.address}  ${origin(ui, w)}`)
+    out.push(`   ${s.dim(`${ui.explorer}/address/${w.address}`)}`)
     if (w.key) out.push(`   ${s.yellow('private key')}  ${w.key}`)
     for (const a of t.assets) out.push(assetLine(ui, w, a.symbol, width))
     const list = w.transitions.slice(-maxRows)
@@ -227,12 +279,12 @@ function keyVar(label) {
   return `${label.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_PRIVATE_KEY`.replace(/^(\d)/, '_$1')
 }
 
-export function renderCreated(wallets, net, style) {
+export function renderCreated(wallets, net, explorer, style) {
   const s = style
   const made = wallets.filter((w) => w.origin === 'new')
   const out = [`Created ${made.length} wallet${made.length === 1 ? '' : 's'} for ${net.name}:`]
   for (const w of made) {
-    out.push('', `  ${s.bold(w.label)}  ${w.address}`, `      ${s.dim(`${net.explorer}/address/${w.address}`)}`)
+    out.push('', `  ${s.bold(w.label)}  ${w.address}`, `      ${s.dim(`${explorer}/address/${w.address}`)}`)
     if (w.keyFile) {
       out.push(`      key file   ${w.keyFile}  ${s.dim('(readable only by you)')}`)
       out.push(`      use it     export ${keyVar(w.label)}=$(cat ${w.keyFile})`)
@@ -256,11 +308,13 @@ export function startJSON(ui) {
     type: 'start',
     network: ui.net.name,
     rpc: rpcHost(ui.rpcUrl),
+    explorer: ui.explorer,
     block: Number(t.startBlock),
     time: new Date(t.startTime).toISOString(),
     wallets: t.wallets.map((w) => ({
       label: w.label,
       address: w.address,
+      url: `${ui.explorer}/address/${w.address}`,
       origin: w.origin,
       ...(w.keyFile && { keyFile: w.keyFile }),
       ...(w.keychain && { keychain: w.keychain }),

@@ -10,6 +10,7 @@ export function makeStyle(on) {
     green: wrap(32, 39),
     yellow: wrap(33, 39),
     cyan: wrap(36, 39),
+    rgb: (r, g, b) => wrap(`38;2;${r};${g};${b}`, 39),
   }
 }
 
@@ -36,9 +37,18 @@ export function padStart(s, width) {
   return ' '.repeat(Math.max(0, width - visibleLength(s))) + s
 }
 
-// Cut a styled string to `width` visible characters without breaking escapes.
+// Cut a styled string to `width` visible characters without breaking escapes,
+// marking the cut with …
 export function truncate(s, width) {
-  if (visibleLength(s) <= width) return s
+  return visibleLength(s) <= width ? s : cut(s, width, true)
+}
+
+// The first `width` visible characters of a styled string, with no … mark.
+export function sliceVisible(s, width) {
+  return visibleLength(s) <= width ? s : cut(s, width, false)
+}
+
+function cut(s, width, ellipsis) {
   const sticky = new RegExp(ANSI.source, 'y')
   let out = ''
   let shown = 0
@@ -54,10 +64,11 @@ export function truncate(s, width) {
       continue
     }
     const ch = String.fromCodePoint(s.codePointAt(i))
-    if (shown >= width - 1) {
+    if (ellipsis && shown >= width - 1) {
       out += '…'
       break
     }
+    if (shown >= width) break
     out += ch
     shown++
     i += ch.length

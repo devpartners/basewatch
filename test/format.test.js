@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { fmtAmount, sparkline, truncate, visibleLength, link, makeStyle, stripAnsi } from '../src/format.js'
+import { fmtAmount, sparkline, truncate, sliceVisible, visibleLength, link, makeStyle, stripAnsi } from '../src/format.js'
 
 test('amounts are exact fixed-point, truncated to the shown places', () => {
   assert.equal(fmtAmount(2_201_232n, 6, 6), '2.201232')
@@ -31,4 +31,13 @@ test('truncate keeps colors and links intact', () => {
   assert.equal(stripAnsi(cut), 'abcdef li…')
   assert.ok(cut.includes('\x1b]8;;\x1b\\'), 'an open link is closed')
   assert.equal(truncate('short', 10), 'short')
+})
+
+test('sliceVisible cuts without an ellipsis and keeps escapes balanced', () => {
+  const s = makeStyle(true)
+  const line = s.green('abcdef') + link('https://x.test', 'linktext', true)
+  const cut = sliceVisible(line, 8)
+  assert.equal(stripAnsi(cut), 'abcdefli')
+  assert.ok(cut.includes('\x1b]8;;\x1b\\'), 'an open link is closed')
+  assert.equal(sliceVisible('short', 10), 'short')
 })

@@ -1,13 +1,15 @@
 import { parseArgs } from 'node:util'
 import { readFileSync } from 'node:fs'
-import { NETWORKS, assetsFor } from './networks.js'
+import { NETWORKS, assetsFor, explorerFor } from './networks.js'
 import { resolveWallets } from './wallets.js'
 import { makeClient, errorText, rpcHost } from './chain.js'
 import { Tracker } from './tracker.js'
 import { Watcher } from './watcher.js'
 import { makeStyle } from './format.js'
+import { Screen } from './screen.js'
+import { imageProtocol, isITerm, logoPng, imageLines } from './term.js'
 import {
-  renderFrame, renderPlainStart, renderPlainLine, renderSummary, renderCreated,
+  renderPlainStart, renderPlainLine, renderSummary, renderCreated,
   startJSON, changeJSON, summaryJSON,
 } from './render.js'
 
@@ -17,7 +19,7 @@ Usage
   basewatch [options] <wallet>...
 
 Wallets (any of them may end with =label)
-  0xADDRESS            an existing wallet (a basescan.org/address/... URL works too)
+  0xADDRESS            an existing wallet (an explorer's /address/... URL works too)
   new                  a brand-new wallet, created now and tracked from zero
   env:VAR              the wallet whose private key is in $VAR (the key is never shown)
   keychain:SERVICE     the wallet whose private key is in macOS Keychain item SERVICE
@@ -39,9 +41,18 @@ Output
   (default)            full-screen live view when run in a terminal
   --plain              one line per change, append-only (recordings, tee, piping)
   --json               one JSON object per line
+  --explorer NAME|URL  where links and keys open: basescan (default), blockscout,
+                       or the base URL of another explorer
   --bell               ring the terminal bell on each change
+  --no-wave            show new changes without the wave
+  --no-logo            no logo, splash or iTerm2 badge
   --no-color           no colors (NO_COLOR is honoured too)
   --no-links           no clickable links
+
+Keys in the full-screen view
+  1-9                  open that wallet on the explorer
+  t                    open the newest transaction on the explorer
+  q, Ctrl-C            quit and print a summary
 
 New wallets
   --key-dir DIR        where new keys are saved (default ./.wallets, files are mode 600)
@@ -79,7 +90,10 @@ export async function main(argv) {
         confirmations: { type: 'string' },
         plain: { type: 'boolean' },
         json: { type: 'boolean' },
+        explorer: { type: 'string' },
         bell: { type: 'boolean' },
+        'no-wave': { type: 'boolean' },
+        'no-logo': { type: 'boolean' },
         'no-color': { type: 'boolean' },
         'no-links': { type: 'boolean' },
         'key-dir': { type: 'string' },
@@ -95,7 +109,12 @@ export async function main(argv) {
     fail(`${e.message}\nRun basewatch --help for usage.`, 2)
   }
   const o = args.values
-  if (o.help) return void process.stdout.write(HELP)
+  if (o.help) {
+    const protocol = process.stdout.isTTY && !o['no-logo'] ? imageProtocol() : null
+    const png = protocol && logoPng(256)
+    if (png) process.stdout.write(imageLines(protocol, png, { rows: 5, cols: 10 }))
+    return void process.stdout.write(HELP)
+  }
   if (o.version) {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
     return void process.stdout.write(`${pkg.version}\n`)
@@ -106,6 +125,12 @@ export async function main(argv) {
   }
 
   const net = o.testnet ? NETWORKS.testnet : NETWORKS.mainnet
+  let explorer
+  try {
+    explorer = explorerFor(net, o.explorer)
+  } catch (e) {
+    fail(e.message, 2)
+  }
   const rpcUrl = o.rpc ?? process.env.BASE_RPC_URL ?? net.rpc
   const intervalMs = intOption(o.interval, 1000, 'interval', 250)
   const confirmations = intOption(o.confirmations, 2, 'confirmations', 0)
@@ -125,23 +150,36 @@ export async function main(argv) {
     fail(e.message, 2)
   }
 
-  if (o['create-only']) return void process.stdout.write(renderCreated(wallets, net, style))
+  if (o['create-only']) return void process.stdout.write(renderCreated(wallets, net, explorer, style))
 
   const assets = assetsFor(net)
   const client = makeClient(net, rpcUrl)
   const tracker = new Tracker(wallets, assets)
   const watcher = new Watcher({ client, tracker, rpcUrl, confirmations, intervalMs })
-  const ui = { net, rpcUrl, tracker, watcher, style, links: tty && mode !== 'json' && !o['no-links'], startedAt: Date.now() }
+  const ui = { net, explorer, rpcUrl, tracker, watcher, style, links: tty && mode !== 'json' && !o['no-links'], startedAt: Date.now() }
+
+  let screen = null
+  if (mode === 'tui') {
+    const logo = !o['no-logo']
+    screen = new Screen(ui, {
+      protocol: logo ? imageProtocol() : null,
+      showBadge: logo && isITerm(),
+      wave: !o['no-wave'],
+      bell: o.bell,
+    })
+    screen.open() // the splash shows while basewatch connects
+  }
 
   try {
     await watcher.start()
   } catch (e) {
+    screen?.close()
     // A new wallet's key is already saved, so say where before giving up.
-    if (wallets.some((w) => w.origin === 'new')) process.stderr.write(renderCreated(wallets, net, style))
+    if (wallets.some((w) => w.origin === 'new')) process.stderr.write(renderCreated(wallets, net, explorer, style))
     fail(`couldn't read from ${rpcHost(rpcUrl)}: ${errorText(e, rpcUrl)}`)
   }
 
-  if (mode === 'tui') runScreen(ui, o.bell)
+  if (screen) await screen.run()
   else if (mode === 'plain') runPlain(ui, o.bell)
   else runJSON(ui)
 }
@@ -160,53 +198,6 @@ function onExit(cleanup) {
   // A closed pipe (e.g. `| head`) ends the run quietly.
   process.stdout.on('error', (e) => (e.code === 'EPIPE' ? process.exit(0) : finish()))
   return finish
-}
-
-function runScreen(ui, bell) {
-  const out = process.stdout
-  const keys = process.stdin.isTTY ? process.stdin : null
-  let restored = false
-  const restore = () => {
-    if (restored) return
-    restored = true
-    if (keys) keys.setRawMode(false)
-    out.write('\x1b[?25h\x1b[?1049l')
-  }
-  process.on('exit', restore)
-  process.on('uncaughtException', (e) => {
-    restore()
-    process.stderr.write(`${e.stack || e}\n`)
-    process.exit(1)
-  })
-
-  out.write('\x1b[?1049h\x1b[?25l')
-  const draw = () => {
-    const lines = renderFrame(ui, { width: out.columns || 100, height: out.rows || 30 })
-    out.write(`\x1b[H${lines.join('\x1b[K\n')}\x1b[K\x1b[J`)
-  }
-  ui.watcher.on('change', () => {
-    if (bell) out.write('\x07')
-    draw()
-  })
-  ui.watcher.on('status', draw)
-  out.on('resize', draw)
-  const timer = setInterval(draw, 1000)
-  draw()
-
-  const finish = onExit(() => {
-    clearInterval(timer)
-    ui.watcher.stop()
-    restore()
-    out.write(renderSummary(ui, { width: out.columns || 120 }))
-  })
-  // Raw mode keeps typed keys from echoing over the screen; q or Ctrl-C quits.
-  if (keys) {
-    keys.setRawMode(true)
-    keys.resume()
-    keys.on('data', (b) => {
-      if (b.includes(3) || b.includes(4) || b.includes(113) || b.includes(81)) finish()
-    })
-  }
 }
 
 function runPlain(ui, bell) {
