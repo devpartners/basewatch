@@ -1,6 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, writeFileSync, readdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { privateKeyToAccount } from 'viem/accounts'
 import { doctor } from '../src/doctor.js'
 
@@ -88,8 +90,48 @@ test('a stale node is a warning, not a failure', async () => {
 })
 
 test('doctor never creates a wallet', async () => {
-  const { code, out } = await run(['new=buyer'])
+  // In a fresh folder, so a .wallets left by an earlier real run can't matter.
+  const home = process.cwd()
+  process.chdir(mkdtempSync(join(tmpdir(), 'basewatch-doctor-')))
+  try {
+    const { code, out } = await run(['new=buyer'])
+    assert.equal(code, 0)
+    assert.match(out, /– wallet +buyer: created when basewatch runs; doctor never creates wallets/)
+    assert.match(out, /✓ new keys +can be stored: \.wallets/)
+    assert.ok(!existsSync('.wallets'), 'no key directory was made')
+  } finally {
+    process.chdir(home)
+  }
+})
+
+test("doctor takes a run's whole command line, and checks it as the run would", async () => {
+  const ok = await run(['--plain', '--interval', '500', '--confirmations', '1', '--no-links', '--bell', `${ADDRESS}=seller`])
+  assert.equal(ok.code, 0)
+  const slow = await run(['--interval', '10'])
+  assert.equal(slow.code, 1)
+  assert.match(slow.out, /✗ options +--interval must be a whole number of at least 250/)
+})
+
+test('two wallets with one label fail in doctor, as they do in a run', async () => {
+  const other = '0x9b98695Fc3a1616edE9605416B7D2bB90Fec0ace'
+  const { code, out, url } = await run([`${ADDRESS}=x`, `${other}=x`])
+  assert.equal(code, 1)
+  assert.match(out, /✗ wallet +label "x" is listed twice\n {4}hint: give each wallet its own =label/)
+  assert.equal(url, undefined, 'stops before any RPC call')
+})
+
+test('doctor refuses a key folder a run would refuse', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'basewatch-doctor-'))
+  writeFileSync(join(dir, 'README.md'), 'a project\n')
+  const { code, out } = await run(['new=buyer', '--key-dir', dir])
+  assert.equal(code, 1)
+  assert.match(out, /✗ new keys +--key-dir .* already holds other files/)
+  assert.deepEqual(readdirSync(dir), ['README.md'], 'nothing was written')
+})
+
+test('an empty BASE_RPC_URL counts as unset', async () => {
+  const { code, out, url } = await run([], { env: { BASE_RPC_URL: '' } })
   assert.equal(code, 0)
-  assert.match(out, /– wallet +buyer: created when basewatch runs; doctor never creates wallets/)
-  assert.ok(!existsSync('.wallets'), 'no key directory was made')
+  assert.equal(url, 'https://base-rpc.publicnode.com')
+  assert.match(out, /✓ rpc +base-rpc\.publicnode\.com {2}\[default\]/)
 })

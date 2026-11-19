@@ -46,3 +46,11 @@ test('explorers by name or URL', () => {
   assert.throws(() => explorerFor(NETWORKS.mainnet, 'toString'), /basescan or blockscout/)
   assert.throws(() => explorerFor(NETWORKS.mainnet, 'javascript:alert(1)'), /https/)
 })
+
+test('an empty --rpc or BASE_RPC_URL counts as unset', async () => {
+  const { rpcFrom } = await import('../src/options.js')
+  const net = NETWORKS.mainnet
+  assert.deepEqual(rpcFrom({ rpc: '' }, { BASE_RPC_URL: '' }, net), [net.rpc, '[default]'])
+  assert.deepEqual(rpcFrom({}, { BASE_RPC_URL: 'https://x.test' }, net), ['https://x.test', '[env BASE_RPC_URL]'])
+  assert.deepEqual(rpcFrom({ rpc: 'https://y.test' }, { BASE_RPC_URL: 'https://x.test' }, net), ['https://y.test', '[flag --rpc]'])
+})

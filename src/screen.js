@@ -177,11 +177,7 @@ export class Screen {
   }
 
   openNewest() {
-    let newest = null
-    for (const w of this.ui.tracker.wallets) {
-      const t = w.transitions.at(-1)
-      if (t && (!newest || t.seq > newest.seq)) newest = t
-    }
+    const newest = this.ui.tracker.newestToOpen()
     if (!newest) return this.say('no changes yet, so no transaction to open')
     const { explorer } = this.ui
     openUrl(newest.tx ? `${explorer}/tx/${newest.tx}` : `${explorer}/block/${newest.block}`)

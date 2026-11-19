@@ -66,6 +66,7 @@ export class Tracker {
           block: log.block,
           tx: log.tx,
           counterparty,
+          polledTo: block,
         }))
       }
     }
@@ -73,12 +74,34 @@ export class Tracker {
       for (const a of this.assets) {
         const actual = balances.get(w.address)[a.symbol]
         if (actual !== w.balances[a.symbol].current) {
-          fresh.push(this.#record(w, a, actual, now, { kind: a.kind === 'native' ? 'balance' : 'unattributed', block }))
+          fresh.push(this.#record(w, a, actual, now, { kind: a.kind === 'native' ? 'balance' : 'unattributed', block, polledTo: block }))
         }
       }
     }
     this.lastBlock = block
     return fresh
+  }
+
+  // The change the `t` key opens: the newest, unless it has no transaction
+  // hash (an ETH balance change, such as gas) and a change seen in the same
+  // poll has one. Gas paid for a USDC payment then opens the payment, not a
+  // block. Balance changes are dated to the end of the poll, after the
+  // transfers in it, so block numbers alone can't make this choice.
+  newestToOpen() {
+    let newest = null
+    for (const w of this.wallets) {
+      const t = w.transitions.at(-1)
+      if (t && (!newest || t.seq > newest.seq)) newest = t
+    }
+    if (!newest || newest.tx) return newest
+    let best = null
+    for (const w of this.wallets) {
+      for (let i = w.transitions.length - 1; i >= 0 && w.transitions[i].polledTo === newest.polledTo; i--) {
+        const t = w.transitions[i]
+        if (t.tx && (!best || t.seq > best.seq)) best = t
+      }
+    }
+    return best ?? newest
   }
 
   #record(w, asset, to, now, info) {

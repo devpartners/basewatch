@@ -43,9 +43,9 @@ history since block 59,296,614 (19:54:58) · base-rpc.publicnode.com
   terminals that support them (iTerm2, VS Code, Warp, kitty, WezTerm).
 - **The connection is a lifeguard flag**: green when live, yellow while one
   failed call is retried, red with the error when calls keep failing.
-- When you quit, an **end-of-shift summary** with the full history and full
-  explorer links for every wallet and transaction is printed, so it stays in
-  your scrollback.
+- When you quit, an **end-of-shift summary** with each wallet's history (its
+  last 50 changes) and full explorer links for every wallet and transaction is
+  printed, so it stays in your scrollback.
 
 ## Install
 
@@ -124,12 +124,20 @@ Watch an x402 buyer whose key you already exported, plus the seller:
 basewatch env:X402_BUYER_PRIVATE_KEY=buyer 0xSELLER…=seller
 ```
 
-Make a fresh buyer wallet before the demo and keep its key in the Keychain:
+Make a fresh buyer wallet before the demo and keep its key only in the
+Keychain, with no key file on disk:
+
+```sh
+basewatch new=x402-buyer --keychain --no-save --create-only
+export X402_BUYER_PRIVATE_KEY=$(security find-generic-password -a "$USER" -s x402-buyer -w)
+basewatch keychain:x402-buyer=buyer 0xSELLER…=seller
+```
+
+Or keep it in the Keychain and in a key file in `./.wallets` as a backup (drop
+`--no-save`):
 
 ```sh
 basewatch new=x402-buyer --keychain --create-only
-export X402_BUYER_PRIVATE_KEY=$(security find-generic-password -a "$USER" -s x402-buyer -w)
-basewatch keychain:x402-buyer=buyer 0xSELLER…=seller
 ```
 
 Create a wallet and watch it from zero in one step:
@@ -139,10 +147,11 @@ basewatch new=buyer            # key saved to ./.wallets/buyer-0x….key
 basewatch new=buyer --show-key # also shows the private key on screen
 ```
 
-Record or share the output instead of using the full-screen view:
+Record or share the output instead of using the full-screen view. `tee -i`
+keeps writing when you press Ctrl-C, so the summary reaches the log too:
 
 ```sh
-basewatch --plain 0xebDb…=buyer | tee demo.log
+basewatch --plain 0xebDb…=buyer | tee -i demo.log
 basewatch --json  0xebDb…=buyer > demo.ndjson
 ```
 
@@ -172,7 +181,7 @@ In the full-screen view:
 | `--no-logo`         | no logo or splash                                                       |
 | `--no-color`        | no colors (`NO_COLOR` works too)                                        |
 | `--no-links`        | no clickable links                                                      |
-| `--key-dir DIR`     | where new keys are saved (default `./.wallets`)                         |
+| `--key-dir DIR`     | where new keys are saved (default `./.wallets`): a new or empty folder, or one basewatch made |
 | `--keychain`        | also store each new key in the macOS Keychain, under its label          |
 | `--show-key`        | show new private keys on screen                                         |
 | `--no-save`         | don't write key files (needs `--show-key` or `--keychain`)              |
@@ -200,9 +209,12 @@ the images. basewatch keeps running without them.
   `--keychain` keeps the key somewhere else.
 - Key files are created with mode 600 in a directory with mode 700. That
   directory gets its own `.gitignore` (`*`), so the keys can't be committed
-  from any repository.
+  from any repository. For that to hold, the key directory must be new,
+  empty, or one basewatch made before. A folder that already holds other
+  files, such as a project's root, is refused rather than changed.
 - An existing key file is never overwritten. The Keychain item for a new
-  wallet must not already exist either.
+  wallet must not already exist either. Both are checked for every new wallet
+  before any key is made, so a refusal leaves nothing behind.
 - Keys reach the Keychain through `security -i` on stdin, not on the command
   line, so they don't show up in `ps`.
 - Keys from `env:` and `keychain:` are only used to work out the address. They

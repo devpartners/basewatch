@@ -6,7 +6,8 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { NETWORKS, assetsFor, explorerFor } from './networks.js'
 import { makeClient, readBalances, fetchTransfers, rpcHost, providerError } from './chain.js'
-import { parseSpec, checkAddress, addressFromKey, keychainRead } from './wallets.js'
+import { parseSpec, labelsFor, rejectRepeats, checkKeyStores, checkAddress, addressFromKey, keychainRead } from './wallets.js'
+import { RUN_OPTIONS, timing, rpcFrom } from './options.js'
 import { makeStyle, fmtAmount, num, shortAddr } from './format.js'
 
 export const HELP = `basewatch doctor: check that basewatch can run here, and say what to fix if not
@@ -21,7 +22,8 @@ Checks run in this order and stop at the first failure:
   rpc          chain ID, newest block, a USDC log query and a balance read:
                real calls, each with its time
 
-Name the same wallets you will watch to check their keys and balances too.
+Put doctor in front of the command you will run: it takes the same wallets
+and every option a run does, and checks them as the run would.
 Nothing is changed: new wallets are not created, and no key is written.
 
 Options
@@ -31,6 +33,10 @@ Options
                        (a URL isn't switched for --testnet; give the testnet one)
   --no-color           no colors (NO_COLOR is honoured too)
   -h, --help           show this help
+
+The other run options are taken too. --interval and --confirmations are
+checked, and so are --key-dir, --keychain, --no-save and --show-key when a
+new wallet is named; the rest need no check.
 `
 
 const LOG_RANGE = 100n // the most blocks one watcher poll asks for
@@ -53,13 +59,7 @@ export async function doctor(argv, deps = {}) {
     args = parseArgs({
       args: argv,
       allowPositionals: true,
-      options: {
-        testnet: { type: 'boolean' },
-        rpc: { type: 'string' },
-        explorer: { type: 'string' },
-        'no-color': { type: 'boolean' },
-        help: { type: 'boolean', short: 'h' },
-      },
+      options: RUN_OPTIONS,
     })
   } catch (e) {
     write(`basewatch doctor: ${e.message}\nRun basewatch doctor --help for usage.\n`)
@@ -112,11 +112,7 @@ export async function doctor(argv, deps = {}) {
     const net = o.testnet ? NETWORKS.testnet : NETWORKS.mainnet
     const other = o.testnet ? NETWORKS.mainnet : NETWORKS.testnet
     ok('network', `${net.name}, chain ${net.chain.id}`, o.testnet ? '[flag --testnet]' : '[default]')
-    const [url, source] = o.rpc
-      ? [o.rpc, '[flag --rpc]']
-      : env.BASE_RPC_URL
-        ? [env.BASE_RPC_URL, '[env BASE_RPC_URL]']
-        : [net.rpc, '[default]']
+    const [url, source] = rpcFrom(o, env, net)
     rpcUrl = url
     let parsed
     try {
@@ -135,16 +131,41 @@ export async function doctor(argv, deps = {}) {
       fail('explorer', e.message)
     }
     ok('explorer', explorer, o.explorer ? '[flag --explorer]' : '[default]')
-
-    // wallets
-    const wallets = []
-    for (const raw of args.positionals) {
-      const w = checkWallet(raw, { env, ok, skip, fail, s })
-      if (!w) continue
-      if (wallets.some((x) => x.address === w.address)) fail('wallet', `${w.address} is listed twice`)
-      wallets.push(w)
+    try {
+      timing(o)
+    } catch (e) {
+      fail('options', e.message)
     }
-    if (!args.positionals.length) skip('wallets', 'none named; name the ones you will watch to check them too')
+
+    // wallets, labeled and checked as a run would
+    const specs = []
+    for (const raw of args.positionals) {
+      try {
+        specs.push(parseSpec(raw))
+      } catch (e) {
+        fail('wallet', e.message)
+      }
+    }
+    const labels = labelsFor(specs)
+    const named = specs.map((spec, i) => checkWallet(spec, labels[i], { env, ok, skip, fail, s }))
+    try {
+      rejectRepeats(named)
+    } catch (e) {
+      fail('wallet', e.message, e.message.startsWith('label') ? 'give each wallet its own =label' : undefined)
+    }
+    const fresh = named.filter((w) => w.isNew)
+    if (fresh.length) {
+      const keyDir = o['key-dir'] ?? '.wallets'
+      try {
+        checkKeyStores(fresh.map((w) => w.label), { keyDir, save: !o['no-save'], keychain: o.keychain, showKey: o['show-key'] })
+      } catch (e) {
+        fail('new keys', e.message)
+      }
+      const stores = [!o['no-save'] && keyDir, o.keychain && 'the Keychain', o['show-key'] && 'the screen'].filter(Boolean)
+      ok('new keys', `can be stored: ${stores.join(', ')}`)
+    }
+    if (!specs.length) skip('wallets', 'none named; name the ones you will watch to check them too')
+    const wallets = named.filter((w) => w.address)
 
     // rpc: each a real call, in the order a run makes them
     const client = clientFor(net, rpcUrl)
@@ -196,18 +217,12 @@ export async function doctor(argv, deps = {}) {
   return 0
 }
 
-// One wallet spec, resolved without creating or storing anything. Returns
-// { label, address }, or null when there is nothing to check yet.
-function checkWallet(raw, { env, ok, skip, fail, s }) {
-  let spec
-  try {
-    spec = parseSpec(raw)
-  } catch (e) {
-    fail('wallet', e.message)
-  }
+// One parsed wallet spec, resolved without creating or storing anything.
+// Returns { label, address }, or { label, isNew } for a wallet not made yet.
+function checkWallet(spec, label, { env, ok, skip, fail, s }) {
   if (spec.kind === 'new') {
-    skip('wallet', `${spec.label ?? 'new'}: created when basewatch runs; doctor never creates wallets`)
-    return null
+    skip('wallet', `${label}: created when basewatch runs; doctor never creates wallets`)
+    return { label, isNew: true }
   }
   if (spec.kind === 'address') {
     let address
@@ -216,7 +231,7 @@ function checkWallet(raw, { env, ok, skip, fail, s }) {
     } catch (e) {
       fail('wallet', e.message, 'copy the address again from the explorer')
     }
-    const label = spec.label ?? shortAddr(address)
+    label ??= shortAddr(address)
     ok('wallet', `${s.bold(label)}  ${address}`, '[address]')
     return { label, address }
   }
@@ -242,6 +257,6 @@ function checkWallet(raw, { env, ok, skip, fail, s }) {
   } catch (e) {
     fail('wallet', `${e.message}; it holds ${key.trim().length} characters`, 'a private key is 64 hex characters, with or without 0x')
   }
-  ok('wallet', `${s.bold(spec.label)}  ${address}`, `[key from ${where}, ${key.trim().length} characters]`)
-  return { label: spec.label, address }
+  ok('wallet', `${s.bold(label)}  ${address}`, `[key from ${where}, ${key.trim().length} characters]`)
+  return { label, address }
 }

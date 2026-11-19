@@ -3,25 +3,32 @@
 // --show-key asks for them to be displayed.
 import { getAddress, isAddress } from 'viem'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve, isAbsolute } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { userInfo } from 'node:os'
 import { shortAddr } from './format.js'
 
 const LABEL = /^[A-Za-z0-9._-]{1,32}$/
-const ADDRESS = /0x[0-9a-fA-F]{40}/
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/
+// An explorer's address page: /address/0x… with no more hex straight after it,
+// so a transaction hash or a longer string is never cut down to an address.
+const ADDRESS_PAGE = /\/address\/(0x[0-9a-fA-F]{40})(?![0-9a-fA-F])/
+const URL_START = /^https?:/i
 
-// "<source>[=label]" where source is 0xADDRESS, a URL containing one, new,
-// env:VAR or keychain:SERVICE.
+// "<source>[=label]" where source is 0xADDRESS, an explorer's /address/ URL,
+// new, env:VAR or keychain:SERVICE.
 export function parseSpec(raw) {
   let source = raw
   let label
+  const url = URL_START.test(raw)
   const eq = raw.lastIndexOf('=')
-  if (eq > 0 && LABEL.test(raw.slice(eq + 1))) {
+  // In a URL, the "=" of "?tab=tokens" belongs to the URL; it is not a label.
+  const inQuery = url && /[?&#][^?&#=/]*$/.test(raw.slice(0, eq))
+  if (eq > 0 && !inQuery && LABEL.test(raw.slice(eq + 1))) {
     source = raw.slice(0, eq)
     label = raw.slice(eq + 1)
-  } else if (eq > 0 && !/^https?:/.test(raw)) {
+  } else if (eq > 0 && !url) {
     throw new Error(`label in "${raw}" may use only letters, digits, ".", "_" and "-" (32 at most)`)
   }
   if (source === 'new') return { kind: 'new', label }
@@ -31,11 +38,37 @@ export function parseSpec(raw) {
   if (source.startsWith('keychain:') && LABEL.test(source.slice(9))) {
     return { kind: 'keychain', service: source.slice(9), label: label ?? source.slice(9) }
   }
-  const m = source.match(ADDRESS)
-  if (m && (source === m[0] || /^https?:\/\//.test(source))) return { kind: 'address', address: m[0], label }
+  if (ADDRESS.test(source)) return { kind: 'address', address: source, label }
+  if (url) {
+    const page = source.match(ADDRESS_PAGE)
+    if (page) return { kind: 'address', address: page[1], label }
+    throw new Error(`"${raw}" isn't a wallet's address page; open the wallet on the explorer and copy its /address/ URL`)
+  }
   throw new Error(
-    `can't read wallet "${raw}": expected 0xADDRESS, an explorer URL, new, env:VAR or keychain:SERVICE, optionally followed by =label`,
+    `can't read wallet "${raw}": expected 0xADDRESS, an explorer's /address/ URL, new, env:VAR or keychain:SERVICE, optionally followed by =label`,
   )
+}
+
+// The label of each spec as a run names it, or undefined where the short
+// address will do: a new wallet without one is "new", or new1, new2… when
+// several are unlabeled.
+export function labelsFor(parsed) {
+  const unlabeled = parsed.filter((p) => p.kind === 'new' && !p.label).length
+  let n = 0
+  return parsed.map((p) => p.label ?? (p.kind !== 'new' ? undefined : unlabeled > 1 ? `new${++n}` : 'new'))
+}
+
+// Throws on the first address or label that is listed twice. A new wallet has
+// no address until it is made, so only its label is compared.
+export function rejectRepeats(wallets) {
+  const seen = new Set()
+  for (const w of wallets) {
+    for (const k of [w.address && w.address.toLowerCase(), 'label:' + w.label]) {
+      if (!k) continue
+      if (seen.has(k)) throw new Error(`${k.startsWith('label:') ? `label "${w.label}"` : w.address} is listed twice`)
+      seen.add(k)
+    }
+  }
 }
 
 export function checkAddress(a) {
@@ -62,8 +95,9 @@ export function keychainRead(service) {
   return r.stdout.trim()
 }
 
-// Uses `security -i` so the key goes over stdin, not the process argument list.
-export function keychainWrite(service, key) {
+// Throws unless a new key could be stored as Keychain item `service`. Reads
+// nothing secret: without -w, `security` doesn't print the password.
+export function keychainCheck(service) {
   const user = account()
   if (!/^[A-Za-z0-9._-]+$/.test(user)) throw new Error(`can't use account name "${user}" with the Keychain`)
   const exists = spawnSync('security', ['find-generic-password', '-a', user, '-s', service], { stdio: 'ignore' })
@@ -71,6 +105,12 @@ export function keychainWrite(service, key) {
   if (exists.status === 0) {
     throw new Error(`the Keychain already has an item "${service}"; choose another label (new=<label>)`)
   }
+  return user
+}
+
+// Uses `security -i` so the key goes over stdin, not the process argument list.
+export function keychainWrite(service, key) {
+  const user = keychainCheck(service)
   const r = spawnSync('security', ['-i'], {
     input: `add-generic-password -a ${user} -s ${service} -w ${key}\n`,
     encoding: 'utf8',
@@ -82,11 +122,43 @@ export function keychainWrite(service, key) {
   if (stored !== key) throw new Error(`couldn't store the key in the Keychain ${(r.stderr || '').trim()}`.trim())
 }
 
-function saveKeyFile(dir, label, address, key) {
+// Keys go only in a folder that git is sure to ignore: one basewatch makes
+// (with a "*" .gitignore), one that is empty, or one basewatch made before.
+// Any other folder, such as a project's root, is refused rather than changed.
+// Returns 'missing', 'empty' or 'ours'; reads only.
+export function keyDirState(dir) {
   const d = resolve(dir)
-  mkdirSync(d, { recursive: true, mode: 0o700 })
-  const ignore = join(d, '.gitignore')
-  if (!existsSync(ignore)) writeFileSync(ignore, '*\n')
+  let st
+  try {
+    st = statSync(d)
+  } catch (e) {
+    if (e.code === 'ENOENT') return 'missing'
+    throw new Error(`can't use --key-dir ${dir}: ${e.message}`)
+  }
+  if (!st.isDirectory()) throw new Error(`--key-dir ${dir} is a file, not a folder`)
+  const entries = readdirSync(d)
+  if (!entries.length) return 'empty'
+  let ignore = null
+  try {
+    ignore = readFileSync(join(d, '.gitignore'), 'utf8')
+  } catch {}
+  if (ignore?.trim() === '*') return 'ours'
+  throw new Error(
+    `--key-dir ${dir} already holds other files, and git might not ignore keys saved there; name a new or empty folder (basewatch gives it its own .gitignore)`,
+  )
+}
+
+function makeKeyDir(dir) {
+  const d = resolve(dir)
+  const state = keyDirState(dir)
+  if (state === 'ours') return d
+  if (state === 'missing') mkdirSync(d, { recursive: true, mode: 0o700 })
+  chmodSync(d, 0o700)
+  writeFileSync(join(d, '.gitignore'), '*\n')
+  return d
+}
+
+function saveKeyFile(d, label, address, key) {
   const file = join(d, `${label}-${address.slice(0, 10)}.key`)
   try {
     writeFileSync(file, key + '\n', { mode: 0o600, flag: 'wx' })
@@ -97,55 +169,66 @@ function saveKeyFile(dir, label, address, key) {
   return rel.startsWith('..') || isAbsolute(rel) ? file : rel
 }
 
-export function resolveWallets(specs, { keyDir = '.wallets', save = true, keychain = false, showKey = false } = {}) {
-  const parsed = specs.map(parseSpec)
-  const fresh = parsed.filter((p) => p.kind === 'new')
-  if (fresh.length && !save && !keychain && !showKey) {
+// Throws if new wallets with these labels couldn't have their keys stored as
+// asked. Changes nothing, so doctor runs it too.
+export function checkKeyStores(labels, { keyDir = '.wallets', save = true, keychain = false, showKey = false } = {}) {
+  if (keychain && process.platform !== 'darwin') throw new Error('--keychain needs macOS')
+  if (!labels.length) return
+  if (!save && !keychain && !showKey) {
     throw new Error("--no-save would keep the new wallet's private key nowhere; add --show-key or --keychain, or drop --no-save")
   }
-  if (keychain && process.platform !== 'darwin') throw new Error('--keychain needs macOS')
+  if (keychain) for (const label of labels) keychainCheck(label)
+  if (save) keyDirState(keyDir)
+}
 
-  const unlabeledNew = fresh.filter((p) => !p.label).length
-  let n = 0
-  const wallets = parsed.map((p) => {
+export function resolveWallets(specs, { keyDir = '.wallets', save = true, keychain = false, showKey = false } = {}) {
+  const parsed = specs.map(parseSpec)
+  const labels = labelsFor(parsed)
+  const wallets = parsed.map((p, i) => {
+    const label = labels[i]
     switch (p.kind) {
       case 'address':
-        return { origin: 'address', address: checkAddress(p.address), label: p.label }
+        return { origin: 'address', address: checkAddress(p.address), label }
       case 'env': {
         const v = process.env[p.name]
         if (!v) throw new Error(`$${p.name} is not set`)
-        return { origin: 'env', envVar: p.name, address: addressFromKey(v, `$${p.name}`), label: p.label }
+        return { origin: 'env', envVar: p.name, address: addressFromKey(v, `$${p.name}`), label }
       }
       case 'keychain': {
         const address = addressFromKey(keychainRead(p.service), `Keychain item "${p.service}"`)
-        return { origin: 'keychain', keychain: p.service, address, label: p.label }
+        return { origin: 'keychain', keychain: p.service, address, label }
       }
-      default: {
-        const key = generatePrivateKey()
-        const label = p.label ?? (unlabeledNew > 1 ? `new${++n}` : 'new')
-        return { origin: 'new', address: privateKeyToAccount(key).address, label, _key: key }
-      }
+      default:
+        return { origin: 'new', label }
     }
   })
-
   for (const w of wallets) w.label ??= shortAddr(w.address)
-  const seen = new Map()
-  for (const w of wallets) {
-    for (const k of [w.address.toLowerCase(), 'label:' + w.label]) {
-      if (seen.has(k)) throw new Error(`${k.startsWith('label:') ? `label "${w.label}"` : w.address} is listed twice`)
-      seen.set(k, true)
-    }
-  }
+  rejectRepeats(wallets)
 
-  // Store keys only once every spec is known to be good.
-  for (const w of wallets.filter((x) => x.origin === 'new')) {
-    if (keychain) {
-      keychainWrite(w.label, w._key)
-      w.keychain = w.label
+  // Every check passes before any key is made or stored, so a refusal never
+  // leaves a key behind.
+  const fresh = wallets.filter((w) => w.origin === 'new')
+  checkKeyStores(fresh.map((w) => w.label), { keyDir, save, keychain, showKey })
+  const stored = []
+  try {
+    const dir = fresh.length && save ? makeKeyDir(keyDir) : null
+    for (const w of fresh) {
+      const key = generatePrivateKey()
+      w.address = privateKeyToAccount(key).address
+      if (keychain) {
+        keychainWrite(w.label, key)
+        w.keychain = w.label
+        stored.push(`Keychain item "${w.label}"`)
+      }
+      if (dir) {
+        w.keyFile = saveKeyFile(dir, w.label, w.address, key)
+        stored.push(w.keyFile)
+      }
+      if (showKey) w.key = key
     }
-    if (save) w.keyFile = saveKeyFile(keyDir, w.label, w.address, w._key)
-    if (showKey) w.key = w._key
-    delete w._key
+  } catch (e) {
+    if (!stored.length) throw e
+    throw new Error(`${e.message}. Stored before that, for wallets never shown and so never funded: ${stored.join(', ')}; delete them before trying again`)
   }
   return wallets
 }

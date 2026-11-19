@@ -2,6 +2,7 @@ import { parseArgs } from 'node:util'
 import { readFileSync } from 'node:fs'
 import { NETWORKS, assetsFor, explorerFor } from './networks.js'
 import { resolveWallets } from './wallets.js'
+import { RUN_OPTIONS, timing, rpcFrom } from './options.js'
 import { makeClient, errorText, rpcHost } from './chain.js'
 import { Tracker } from './tracker.js'
 import { Watcher } from './watcher.js'
@@ -58,7 +59,8 @@ Keys in the full-screen view
   q, Ctrl-C            quit and print a summary
 
 New wallets
-  --key-dir DIR        where new keys are saved (default ./.wallets, files are mode 600)
+  --key-dir DIR        where new keys are saved (default ./.wallets, files are mode 600);
+                       a new or empty folder, or one basewatch made, so git ignores it
   --keychain           also store each new key in the macOS Keychain, item named by its label
   --show-key           show new private keys on screen
   --no-save            don't write key files (needs --show-key or --keychain)
@@ -73,13 +75,6 @@ function fail(message, code = 1) {
   process.exit(code)
 }
 
-function intOption(value, fallback, name, min) {
-  if (value === undefined) return fallback
-  const n = Number(value)
-  if (!Number.isInteger(n) || n < min) fail(`--${name} must be a whole number of at least ${min}`, 2)
-  return n
-}
-
 export async function main(argv) {
   if (argv[0] === 'doctor') {
     process.exitCode = await doctor(argv.slice(1))
@@ -90,27 +85,7 @@ export async function main(argv) {
     args = parseArgs({
       args: argv,
       allowPositionals: true,
-      options: {
-        testnet: { type: 'boolean' },
-        rpc: { type: 'string' },
-        interval: { type: 'string' },
-        confirmations: { type: 'string' },
-        plain: { type: 'boolean' },
-        json: { type: 'boolean' },
-        explorer: { type: 'string' },
-        bell: { type: 'boolean' },
-        'no-wave': { type: 'boolean' },
-        'no-logo': { type: 'boolean' },
-        'no-color': { type: 'boolean' },
-        'no-links': { type: 'boolean' },
-        'key-dir': { type: 'string' },
-        keychain: { type: 'boolean' },
-        'show-key': { type: 'boolean' },
-        'no-save': { type: 'boolean' },
-        'create-only': { type: 'boolean' },
-        help: { type: 'boolean', short: 'h' },
-        version: { type: 'boolean', short: 'v' },
-      },
+      options: { ...RUN_OPTIONS, version: { type: 'boolean', short: 'v' } },
     })
   } catch (e) {
     fail(`${e.message}\nRun basewatch --help for usage.`, 2)
@@ -138,9 +113,14 @@ export async function main(argv) {
   } catch (e) {
     fail(e.message, 2)
   }
-  const rpcUrl = o.rpc ?? process.env.BASE_RPC_URL ?? net.rpc
-  const intervalMs = intOption(o.interval, 1000, 'interval', 250)
-  const confirmations = intOption(o.confirmations, 2, 'confirmations', 0)
+  const [rpcUrl] = rpcFrom(o, process.env, net)
+  let polling
+  try {
+    polling = timing(o)
+  } catch (e) {
+    fail(e.message, 2)
+  }
+  const { intervalMs, confirmations } = polling
   const tty = Boolean(process.stdout.isTTY)
   const mode = o.json ? 'json' : o.plain || !tty ? 'plain' : 'tui'
   const style = makeStyle(tty && mode !== 'json' && !o['no-color'] && !process.env.NO_COLOR)
@@ -167,6 +147,9 @@ export async function main(argv) {
 
   let screen = null
   if (mode === 'tui') {
+    // A key kept nowhere but on screen goes to the main screen first, so it is
+    // still in the scrollback if the live view never ends cleanly.
+    if (wallets.some((w) => w.key && !w.keyFile && !w.keychain)) process.stdout.write(renderCreated(wallets, net, explorer, style))
     screen = new Screen(ui, {
       protocol: o['no-logo'] ? null : imageProtocol(),
       wave: !o['no-wave'],
@@ -189,13 +172,16 @@ export async function main(argv) {
   else runJSON(ui)
 }
 
+// `cleanup` returns the last text to print. Exits only once that text has
+// reached the pipe: a pipe drains after the write call returns, and exiting
+// sooner cuts the summary short.
 function onExit(cleanup) {
   let done = false
   const finish = () => {
     if (done) return
     done = true
-    cleanup()
-    process.exit(0)
+    process.stdout.write(cleanup(), () => process.exit(0))
+    setTimeout(() => process.exit(0), 3000) // a reader that never drains
   }
   process.on('SIGINT', finish)
   process.on('SIGTERM', finish)
@@ -220,7 +206,7 @@ function runPlain(ui, bell) {
   })
   onExit(() => {
     ui.watcher.stop()
-    out.write('\n' + renderSummary(ui, { width: out.columns || 120 }))
+    return '\n' + renderSummary(ui, { width: out.columns || 120 })
   })
 }
 
@@ -231,6 +217,6 @@ function runJSON(ui) {
   ui.watcher.on('status', (st) => !st.ok && emit({ type: 'error', message: st.error }))
   onExit(() => {
     ui.watcher.stop()
-    emit(summaryJSON(ui))
+    return JSON.stringify(summaryJSON(ui)) + '\n'
   })
 }

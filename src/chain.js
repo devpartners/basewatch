@@ -5,6 +5,7 @@ const MULTICALL3 = '0xcA11bde05977b3631167028862bE2a173976CA11'
 const multicallAbi = parseAbi(['function getEthBalance(address addr) view returns (uint256 balance)'])
 const erc20Abi = parseAbi(['function balanceOf(address owner) view returns (uint256)'])
 const transferEvent = parseAbiItem('event Transfer(address indexed from, address indexed to, uint256 value)')
+const TX_HASH = /^0x[0-9a-fA-F]{64}$/
 
 export function makeClient(net, rpcUrl, { retryCount = 2 } = {}) {
   return createPublicClient({
@@ -48,7 +49,9 @@ export async function fetchTransfers(client, tokens, owners, fromBlock, toBlock)
     unique.set(`${l.transactionHash}:${l.logIndex}`, {
       block: l.blockNumber,
       logIndex: l.logIndex,
-      tx: l.transactionHash,
+      // Shown, linked and opened, so only a well-formed hash is kept; without
+      // one, the change links to its block instead.
+      tx: TX_HASH.test(l.transactionHash) ? l.transactionHash : undefined,
       token: l.address,
       from: l.args.from,
       to: l.args.to,
@@ -69,8 +72,39 @@ export function rpcHost(url) {
   }
 }
 
-// The whole error, provider text and underlying cause included, on one line,
-// with the RPC URL (and any API key in it) cut down to its host.
+// The parts of an RPC URL that may be an API key, longest first: the login,
+// path segments and query values long enough to be one.
+function urlSecrets(rpcUrl) {
+  let u
+  try {
+    u = new URL(rpcUrl)
+  } catch {
+    return []
+  }
+  const found = new Set()
+  for (const part of [u.username, u.password, ...u.pathname.split('/'), ...u.searchParams.values()]) {
+    if (!part) continue
+    found.add(part)
+    try {
+      found.add(decodeURIComponent(part))
+    } catch {}
+  }
+  return [...found].filter((p) => p.length >= 8).sort((a, b) => b.length - a.length)
+}
+
+// Text from an RPC, made safe to print: control characters, which could clear
+// the screen or fake a line, become spaces; the RPC URL is cut down to its
+// host; and any piece of the URL that may be an API key becomes "…", even
+// where the provider quotes it back on its own.
+export function cleanText(text, rpcUrl) {
+  let out = String(text ?? '').replace(/[\x00-\x1f\x7f-\x9f]/g, ' ')
+  if (!rpcUrl) return out
+  out = out.split(rpcUrl).join(rpcHost(rpcUrl))
+  for (const secret of urlSecrets(rpcUrl)) out = out.split(secret).join('…')
+  return out
+}
+
+// The whole error, provider text and underlying cause included, on one line.
 export function providerError(e, rpcUrl) {
   const parts = []
   const add = (t) => {
@@ -79,11 +113,9 @@ export function providerError(e, rpcUrl) {
   }
   add(e?.shortMessage || e?.message || e)
   for (let c = e; c; c = c.cause) add(c.details ?? (c === e ? '' : c.message))
-  const text = parts.join(' — ')
-  return rpcUrl ? text.split(rpcUrl).join(rpcHost(rpcUrl)) : text
+  return cleanText(parts.join(' — '), rpcUrl)
 }
 
 export function errorText(e, rpcUrl) {
-  const msg = String(e?.shortMessage || e?.message || e).split('\n')[0]
-  return rpcUrl ? msg.split(rpcUrl).join(rpcHost(rpcUrl)) : msg
+  return cleanText(String(e?.shortMessage || e?.message || e).split('\n')[0], rpcUrl)
 }

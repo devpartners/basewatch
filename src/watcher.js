@@ -27,6 +27,16 @@ export class Watcher extends EventEmitter {
   stop() {
     this.stopped = true
     clearTimeout(this.timer)
+    this.#flush()
+  }
+
+  // Announces changes that are in the history but not yet announced, so a
+  // stop while block times are being fetched never leaves the summary
+  // counting changes that no line showed.
+  #flush() {
+    const fresh = this.pending
+    this.pending = null
+    if (fresh?.length) this.emit('change', fresh)
   }
 
   #schedule(delay = this.intervalMs) {
@@ -48,8 +58,9 @@ export class Watcher extends EventEmitter {
         if (this.stopped) return
         const fresh = this.tracker.apply(logs, balances, to)
         if (fresh.length) {
+          this.pending = fresh
           await this.#stamp(fresh)
-          this.emit('change', fresh)
+          this.#flush()
         }
       }
       this.status = { ok: true, error: null, failures: 0 }

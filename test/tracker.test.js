@@ -93,3 +93,29 @@ test('addresses match regardless of letter case', () => {
     new Map([[BUYER, { USDC: 2_201_231n, ETH: 0n }], [SELLER, { USDC: 0n, ETH: 5n }]]), 101n)
   assert.equal(t.wallet(BUYER).transitions[0].kind, 'transfer')
 })
+
+test('t opens the payment, not the gas paid for it in the same poll', () => {
+  const t = setup(undefined, { USDC: 0n, ETH: 10n ** 15n })
+  // Earlier poll: a payment the buyer received.
+  t.apply([transfer(101n, 0, OTHER, BUYER, 500n, '0xold')], new Map([[BUYER, { USDC: 2_201_732n, ETH: 0n }], [SELLER, { USDC: 0n, ETH: 10n ** 15n }]]), 101n)
+  // This poll: the seller pays the buyer and spends gas, which has no tx hash.
+  t.apply(
+    [transfer(103n, 0, SELLER, BUYER, 1n, '0xpay')],
+    new Map([[BUYER, { USDC: 2_201_733n, ETH: 0n }], [SELLER, { USDC: 0n, ETH: 10n ** 15n - 7n }]]),
+    105n,
+  )
+  // The gas change is newest, but the payment from the same poll is what opens.
+  const gas = t.wallet(SELLER).transitions.at(-1)
+  assert.equal(gas.kind, 'balance')
+  assert.equal(t.newestToOpen().tx, '0xpay')
+
+  // A poll with only an ETH change opens its block, not an older payment.
+  t.apply([], new Map([[BUYER, { USDC: 2_201_733n, ETH: 3n }], [SELLER, { USDC: 0n, ETH: 10n ** 15n - 7n }]]), 107n)
+  const newest = t.newestToOpen()
+  assert.equal(newest.tx, undefined)
+  assert.equal(newest.block, 107n)
+})
+
+test('t has nothing to open before the first change', () => {
+  assert.equal(setup().newestToOpen(), null)
+})
