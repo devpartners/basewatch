@@ -104,6 +104,18 @@ Each wallet can end with `=label`:
 | `env:VAR`           | the wallet whose private key is in `$VAR`; the key is never shown    |
 | `keychain:SERVICE`  | the wallet whose private key is in macOS Keychain item `SERVICE`     |
 
+### Example
+
+Watch two wallets by address, labeled so the view names them. Both are real
+wallets on Base mainnet, so this runs as is:
+
+```sh
+basewatch 0xebDbdC98C7AA8DA34f2A443Dd4C8895D05cDBA3E=buyer \
+          0x9b98695Fc3a1616edE9605416B7D2bB90Fec0ace=seller
+```
+
+Put `doctor` in front of the same wallets to check them before you start.
+
 ### Demo recipes
 
 Watch an x402 buyer whose key you already exported, plus the seller:
