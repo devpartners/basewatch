@@ -166,7 +166,7 @@ In the full-screen view:
 | `--confirmations N` | stay N blocks behind the newest (default 2, which is 0.4 s on Base)     |
 | `--plain`           | one line per change, append-only; the default when output isn't a terminal |
 | `--json`            | one JSON object per line: `start`, `change`, `error`, `summary`         |
-| `--explorer NAME`   | where links and keys open: `basescan` (default), `blockscout`, or the base URL of another explorer |
+| `--explorer NAME`   | where links and keys open: `basescan` (default), `blockscout`, or the base URL of another explorer. A name switches to its Sepolia site under `--testnet`; a URL is used as given, so pass the testnet explorer's URL there |
 | `--bell`            | ring the terminal bell on each change                                   |
 | `--no-wave`         | show new changes without the wave                                       |
 | `--no-logo`         | no logo or splash                                                       |

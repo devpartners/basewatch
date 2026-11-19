@@ -44,7 +44,8 @@ Output
   --plain              one line per change, append-only (recordings, tee, piping)
   --json               one JSON object per line
   --explorer NAME|URL  where links and keys open: basescan (default), blockscout,
-                       or the base URL of another explorer
+                       or the base URL of another explorer; a URL isn't switched
+                       for --testnet, so give the testnet explorer's URL there
   --bell               ring the terminal bell on each change
   --no-wave            show new changes without the wave
   --no-logo            no logo or splash

@@ -34,7 +34,7 @@ export function parseSpec(raw) {
   const m = source.match(ADDRESS)
   if (m && (source === m[0] || /^https?:\/\//.test(source))) return { kind: 'address', address: m[0], label }
   throw new Error(
-    `can't read wallet "${raw}": expected 0xADDRESS, a basescan URL, new, env:VAR or keychain:SERVICE, optionally followed by =label`,
+    `can't read wallet "${raw}": expected 0xADDRESS, an explorer URL, new, env:VAR or keychain:SERVICE, optionally followed by =label`,
   )
 }
 

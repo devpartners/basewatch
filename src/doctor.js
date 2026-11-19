@@ -28,6 +28,7 @@ Options
   --testnet            Base Sepolia instead of Base mainnet
   --rpc URL            JSON-RPC endpoint (or set BASE_RPC_URL)
   --explorer NAME|URL  basescan (default), blockscout, or another explorer's base URL
+                       (a URL isn't switched for --testnet; give the testnet one)
   --no-color           no colors (NO_COLOR is honoured too)
   -h, --help           show this help
 `
