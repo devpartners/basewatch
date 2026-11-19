@@ -176,10 +176,9 @@ function share(budget, need) {
 function footer(ui, now) {
   const s = ui.style
   if (ui.flash && now < ui.flash.until) return s.yellow(` ${ui.flash.text}`)
-  if (!ui.keys) return s.dim(' Ctrl-C quits and prints a summary')
+  if (!ui.keys) return s.dim(' Ctrl-C: quit with a summary')
   const n = Math.min(ui.tracker.wallets.length, 9)
-  const open = n > 1 ? `1–${n} open a wallet` : '1 opens the wallet'
-  return s.dim(` ${open} on ${host(ui.explorer)} · t opens the newest transaction · q quits and prints a summary`)
+  return s.dim(` ${n > 1 ? `1–${n}` : '1'}: wallet on ${host(ui.explorer)} · t: newest tx · q: quit`)
 }
 
 // The live screen, one string per row. `mark` ({ rows, cols }) keeps the
@@ -190,7 +189,8 @@ export function renderFrame(ui, { width, height, now = Date.now(), mark = null }
   const W = Math.max(40, width - 1)
   const skip = mark ? `\x1b[${mark.cols}C` : ''
   const lines = [
-    `${s.bold('basewatch')}  ${ui.net.name}  ${s.dim('block')} ${num(watcher.head ?? tracker.lastBlock)}  ${s.dim('up')} ${duration(now - ui.startedAt)}  ${flag(ui)}`,
+    // The flag comes first so a narrow screen cuts the block number, not the status.
+    `${s.bold('basewatch')}  ${ui.net.name}  ${flag(ui)}  ${s.dim('block')} ${num(watcher.head ?? tracker.lastBlock)}  ${s.dim('up')} ${duration(now - ui.startedAt)}`,
     s.dim(`history since block ${num(tracker.startBlock)} (${clock(tracker.startTime)}) · ${rpcHost(ui.rpcUrl)}`),
     '',
   ].map((l) => skip + truncate(l, W - (mark ? mark.cols : 0)))

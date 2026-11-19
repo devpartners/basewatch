@@ -12,7 +12,7 @@ payments reads as a chain. It's built for live demos, such as x402 payments:
 start it, make some payments, and the audience watches the balances move.
 
 ```text
-basewatch  Base mainnet  block 59,297,849  up 00:04:12  ⚑ green flag · live
+basewatch  Base mainnet  ⚑ green flag · live  block 59,297,849  up 00:04:12
 history since block 59,296,614 (19:54:58) · base-rpc.publicnode.com
 
 ━━ 1 buyer  0xebDbdC98C7AA8DA34f2A443Dd4C8895D05cDBA3E  key from $X402_BUYER_PRIVATE_KEY ━━━━━━━━━━━━━━━━━━
@@ -26,7 +26,7 @@ history since block 59,296,614 (19:54:58) · base-rpc.publicnode.com
    USDC  0.000000 → 0.001000 → 0.002000                       ▁█  net +0.002000  2 changes
    ...
 
- 1–2 open a wallet on basescan.org · t opens the newest transaction · q quits and prints a summary
+ 1–2: wallet on basescan.org · t: newest tx · q: quit
 ```
 
 - The **balance line** shows the starting value, every value it moved to, and
@@ -157,7 +157,7 @@ In the full-screen view:
 | `--explorer NAME`   | where links and keys open: `basescan` (default), `blockscout`, or the base URL of another explorer |
 | `--bell`            | ring the terminal bell on each change                                   |
 | `--no-wave`         | show new changes without the wave                                       |
-| `--no-logo`         | no logo, splash or iTerm2 badge                                         |
+| `--no-logo`         | no logo or splash                                                       |
 | `--no-color`        | no colors (`NO_COLOR` works too)                                        |
 | `--no-links`        | no clickable links                                                      |
 | `--key-dir DIR`     | where new keys are saved (default `./.wallets`)                         |
@@ -170,9 +170,9 @@ In the full-screen view:
 
 In terminals that can show images (iTerm2, WezTerm, kitty, Ghostty), the
 logo shows on a splash screen while basewatch connects, then stays small in the
-corner of the live view. `--help` opens with it too. iTerm2 also gets a faint
-"BaseWatch" badge. The tab title reads `🛟 basewatch · buyer, seller`, and
-switches to 🚩 when the RPC keeps failing. Everything is restored on quit.
+corner of the live view. `--help` opens with it too. The tab title reads
+`🛟 basewatch · buyer, seller`, and switches to 🚩 when the RPC keeps failing.
+Everything is restored on quit.
 Other terminals, tmux included, get no images. `--no-logo` turns it all off.
 
 **Before a demo in iTerm2:** the first time basewatch shows the logo, iTerm2

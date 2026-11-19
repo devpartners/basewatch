@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { imageProtocol, isITerm, inlineImage, clearImages, badge, title, logoPng } from '../src/term.js'
+import { imageProtocol, inlineImage, clearImages, title, logoPng } from '../src/term.js'
 import { NETWORKS, explorerFor } from '../src/networks.js'
 
 test('image protocol comes from what the terminal says it is', () => {
@@ -11,7 +11,6 @@ test('image protocol comes from what the terminal says it is', () => {
   assert.equal(imageProtocol({ TERM_PROGRAM: 'ghostty' }), 'kitty')
   assert.equal(imageProtocol({ TERM_PROGRAM: 'Apple_Terminal' }), null)
   assert.equal(imageProtocol({ TERM_PROGRAM: 'iTerm.app', TMUX: '/tmp/tmux' }), null, 'tmux hides the terminal')
-  assert.equal(isITerm({ TERM_PROGRAM: 'WezTerm' }), false, 'the badge is iTerm2 only')
 })
 
 test('inline images keep the cursor where it was', () => {
@@ -30,8 +29,7 @@ test('inline images keep the cursor where it was', () => {
   assert.equal(clearImages('iterm'), '')
 })
 
-test('badge and title escapes', () => {
-  assert.equal(badge('BaseWatch'), `\x1b]1337;SetBadgeFormat=${Buffer.from('BaseWatch').toString('base64')}\x07`)
+test('title escapes', () => {
   assert.equal(title.set('a\x07b\x1bc'), '\x1b]2;abc\x07', 'control characters cannot end the title early')
 })
 

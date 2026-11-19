@@ -1,6 +1,6 @@
-// Terminal extras: inline images, the tab title, the iTerm2 badge, and opening
-// a URL in the browser. All of it is decoration. A terminal that can't do one
-// of these is simply never asked to.
+// Terminal extras: inline images, the tab title, and opening a URL in the
+// browser. All of it is decoration. A terminal that can't do one of these is
+// simply never asked to.
 import { readFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 
@@ -17,7 +17,7 @@ export function imageProtocol(env = process.env) {
   return null
 }
 
-export function isITerm(env = process.env) {
+function isITerm(env) {
   return !env.TMUX && (env.TERM_PROGRAM === 'iTerm.app' || env.LC_TERMINAL === 'iTerm2')
 }
 
@@ -65,11 +65,6 @@ export const title = {
   save: `${ESC}[22;0t`,
   set: (text) => `${ESC}]2;${String(text).replace(/[\x00-\x1f\x7f]/g, '')}${BEL}`,
   restore: `${ESC}[23;0t`,
-}
-
-// iTerm2's badge: large faint text in the corner of the session. '' removes it.
-export function badge(text) {
-  return `${ESC}]1337;SetBadgeFormat=${Buffer.from(text).toString('base64')}${BEL}`
 }
 
 // Opens `url` in the default browser without waiting for it.

@@ -1,6 +1,6 @@
 // The full-screen live view: alternate screen, keys, logo, tab title, waves.
 import { renderFrame, renderSummary, WAVE_MS } from './render.js'
-import { inlineImage, clearImages, moveTo, title, badge, openUrl, logoPng } from './term.js'
+import { inlineImage, clearImages, moveTo, title, openUrl, logoPng } from './term.js'
 import { visibleLength, shortHash, num } from './format.js'
 import { rpcHost } from './chain.js'
 
@@ -13,12 +13,11 @@ const host = (url) => new URL(url).host
 
 export class Screen {
   // `protocol`: inline-image protocol, or null for no images.
-  constructor(ui, { protocol = null, showBadge = false, wave = true, bell = false } = {}) {
+  constructor(ui, { protocol = null, wave = true, bell = false } = {}) {
     this.ui = ui
     this.out = process.stdout
     this.keys = process.stdin.isTTY ? process.stdin : null
     this.protocol = protocol
-    this.showBadge = showBadge
     this.bell = bell
     this.splashPng = protocol && logoPng(768)
     this.markPng = protocol && logoPng(256)
@@ -49,18 +48,16 @@ export class Screen {
       this.keys.on('data', (b) => this.key(b.toString('utf8')))
     }
     this.titled = this.titleText()
-    out.write(title.save + title.set(this.titled) + (this.showBadge ? badge('BaseWatch') : '') + '\x1b[?1049h\x1b[?25l')
+    out.write(title.save + title.set(this.titled) + '\x1b[?1049h\x1b[?25l')
     this.splash()
   }
 
-  // Gives the terminal back: images, cursor, main screen, badge, tab title.
+  // Gives the terminal back: images, cursor, main screen, tab title.
   close() {
     if (!this.opened || this.closed) return
     this.closed = true
     if (this.keys) this.keys.setRawMode(false)
-    this.out.write(
-      clearImages(this.protocol) + '\x1b[?25h\x1b[?1049l' + (this.showBadge ? badge('') : '') + title.restore,
-    )
+    this.out.write(clearImages(this.protocol) + '\x1b[?25h\x1b[?1049l' + title.restore)
   }
 
   splash() {

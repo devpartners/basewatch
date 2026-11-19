@@ -32,7 +32,9 @@ function makeUi({ keys = true, failures = 0, explorer = 'https://basescan.org' }
 test('the frame fills the screen and ends with the keys', () => {
   const lines = renderFrame(makeUi(), { width: 140, height: 24, now: 60_000 })
   assert.equal(lines.length, 24)
-  assert.match(lines.at(-1), /1–2 open a wallet on basescan\.org · t opens the newest transaction · q quits/)
+  assert.match(lines.at(-1), /1–2: wallet on basescan\.org · t: newest tx · q: quit/)
+  assert.ok(lines.at(-1).length <= 60, 'the key hints fit a large demo font')
+  assert.match(lines[0], /live {2}block/, 'the flag comes before the block number')
   assert.ok(lines.some((l) => /━━ 1 buyer {2}0x1111/.test(l)), 'wallets are numbered for their keys')
   assert.ok(lines.some((l) => /━━ 2 seller/.test(l)))
   assert.ok(lines.every((l) => !l.includes('https://')), 'no URLs on the live screen')
@@ -40,7 +42,7 @@ test('the frame fills the screen and ends with the keys', () => {
 
 test('without a keyboard there are no numbers and no key hints', () => {
   const lines = renderFrame(makeUi({ keys: false }), { width: 140, height: 24, now: 60_000 })
-  assert.match(lines.at(-1), /Ctrl-C quits/)
+  assert.match(lines.at(-1), /Ctrl-C: quit/)
   assert.ok(lines.some((l) => /━━ buyer/.test(l)))
 })
 
@@ -48,7 +50,7 @@ test('a flash message replaces the key hints until it expires', () => {
   const ui = makeUi()
   ui.flash = { text: '↗ opening buyer on basescan.org', until: 5_000 }
   assert.match(renderFrame(ui, { width: 140, height: 24, now: 4_000 }).at(-1), /opening buyer/)
-  assert.match(renderFrame(ui, { width: 140, height: 24, now: 6_000 }).at(-1), /1–2 open/)
+  assert.match(renderFrame(ui, { width: 140, height: 24, now: 6_000 }).at(-1), /1–2: wallet/)
 })
 
 test('the header skips the corner kept for the logo', () => {

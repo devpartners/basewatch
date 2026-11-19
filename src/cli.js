@@ -8,7 +8,7 @@ import { Watcher } from './watcher.js'
 import { makeStyle } from './format.js'
 import { Screen } from './screen.js'
 import { doctor } from './doctor.js'
-import { imageProtocol, isITerm, logoPng, imageLines } from './term.js'
+import { imageProtocol, logoPng, imageLines } from './term.js'
 import {
   renderPlainStart, renderPlainLine, renderSummary, renderCreated,
   startJSON, changeJSON, summaryJSON,
@@ -47,7 +47,7 @@ Output
                        or the base URL of another explorer
   --bell               ring the terminal bell on each change
   --no-wave            show new changes without the wave
-  --no-logo            no logo, splash or iTerm2 badge
+  --no-logo            no logo or splash
   --no-color           no colors (NO_COLOR is honoured too)
   --no-links           no clickable links
 
@@ -166,10 +166,8 @@ export async function main(argv) {
 
   let screen = null
   if (mode === 'tui') {
-    const logo = !o['no-logo']
     screen = new Screen(ui, {
-      protocol: logo ? imageProtocol() : null,
-      showBadge: logo && isITerm(),
+      protocol: o['no-logo'] ? null : imageProtocol(),
       wave: !o['no-wave'],
       bell: o.bell,
     })
