@@ -44,7 +44,7 @@ export function checkAddress(a) {
   return getAddress(a)
 }
 
-function addressFromKey(key, where) {
+export function addressFromKey(key, where) {
   let k = key.trim()
   if (!k.startsWith('0x')) k = '0x' + k
   if (!/^0x[0-9a-fA-F]{64}$/.test(k)) throw new Error(`${where} doesn't hold a private key (expected 64 hex characters)`)

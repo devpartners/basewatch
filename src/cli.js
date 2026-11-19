@@ -7,6 +7,7 @@ import { Tracker } from './tracker.js'
 import { Watcher } from './watcher.js'
 import { makeStyle } from './format.js'
 import { Screen } from './screen.js'
+import { doctor } from './doctor.js'
 import { imageProtocol, isITerm, logoPng, imageLines } from './term.js'
 import {
   renderPlainStart, renderPlainLine, renderSummary, renderCreated,
@@ -17,6 +18,7 @@ const HELP = `basewatch: watch Base wallets live and show every balance change s
 
 Usage
   basewatch [options] <wallet>...
+  basewatch doctor [options] [<wallet>...]   check that basewatch can run here
 
 Wallets (any of them may end with =label)
   0xADDRESS            an existing wallet (an explorer's /address/... URL works too)
@@ -78,6 +80,10 @@ function intOption(value, fallback, name, min) {
 }
 
 export async function main(argv) {
+  if (argv[0] === 'doctor') {
+    process.exitCode = await doctor(argv.slice(1))
+    return
+  }
   let args
   try {
     args = parseArgs({

@@ -6,11 +6,11 @@ const multicallAbi = parseAbi(['function getEthBalance(address addr) view return
 const erc20Abi = parseAbi(['function balanceOf(address owner) view returns (uint256)'])
 const transferEvent = parseAbiItem('event Transfer(address indexed from, address indexed to, uint256 value)')
 
-export function makeClient(net, rpcUrl) {
+export function makeClient(net, rpcUrl, { retryCount = 2 } = {}) {
   return createPublicClient({
     chain: net.chain,
     cacheTime: 0,
-    transport: http(rpcUrl, { retryCount: 2, timeout: 10_000 }),
+    transport: http(rpcUrl, { retryCount, timeout: 10_000 }),
   })
 }
 
@@ -67,6 +67,20 @@ export function rpcHost(url) {
   } catch {
     return 'rpc'
   }
+}
+
+// The whole error, provider text and underlying cause included, on one line,
+// with the RPC URL (and any API key in it) cut down to its host.
+export function providerError(e, rpcUrl) {
+  const parts = []
+  const add = (t) => {
+    const text = String(t ?? '').replace(/\s+/g, ' ').trim()
+    if (text && !parts.some((p) => p.includes(text))) parts.push(text)
+  }
+  add(e?.shortMessage || e?.message || e)
+  for (let c = e; c; c = c.cause) add(c.details ?? (c === e ? '' : c.message))
+  const text = parts.join(' — ')
+  return rpcUrl ? text.split(rpcUrl).join(rpcHost(rpcUrl)) : text
 }
 
 export function errorText(e, rpcUrl) {

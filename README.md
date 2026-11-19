@@ -53,13 +53,46 @@ Needs Node.js 20 or newer.
 
 ```sh
 npm install
-npm link        # puts `basewatch` on your PATH; or run ./bin/basewatch.js
+npm link            # puts `basewatch` on your PATH; or run ./bin/basewatch.js
+basewatch doctor    # checks it can run here, and says what to fix if not
 ```
+
+## Before a demo: `basewatch doctor`
+
+Give `doctor` the same wallets and options you will watch with. It checks each
+link in the chain basewatch needs and stops at the first broken one, so the
+last line is the thing to fix:
+
+```text
+basewatch doctor
+
+  ✓ install       basewatch 0.1.0 on Node.js 24.20.0
+  ✓ viem          2.57.16
+  ✓ network       Base mainnet, chain 8453  [default]
+  ✓ rpc           mainnet.base.org  [flag --rpc]
+  ✓ explorer      https://basescan.org  [default]
+  ✓ wallet        buyer  0xebDbdC98C7AA8DA34f2A443Dd4C8895D05cDBA3E  [key from $X402_BUYER_PRIVATE_KEY, 66 characters]
+  ✓ chain id      8453 (Base mainnet)  134 ms
+  ✓ newest block  59,575,147, 0 s old  77 ms
+  ✗ log query     RPC Request failed. — request limit reached
+    hint: this RPC refuses or limits eth_getLogs, which basewatch needs to see x402 payments ...
+```
+
+- Every setting shows where its value came from: a flag, an environment
+  variable, or the default.
+- The RPC checks are real calls, timed: chain ID, newest block, the same USDC
+  log query a run makes, and a balance read. A wrong network names the flag to
+  change. A provider's error is printed whole.
+- A key is shown only as the address it gives and its length. An RPC URL's path
+  is hidden, since it may hold an API key.
+- It changes nothing: `new` wallets are skipped, not created.
+- The exit code is 0 when no check failed, 1 when one did.
 
 ## Usage
 
 ```sh
 basewatch [options] <wallet>...
+basewatch doctor [options] [<wallet>...]
 ```
 
 Each wallet can end with `=label`:
