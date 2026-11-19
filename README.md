@@ -1,6 +1,11 @@
 # basewatch
 Real-time wallet watcher for the Base blockchain. Built to be useful for live demos as alternative to drowning in block explorers.
 
+<p align="center">
+  <img src="docs/images/basewatch-logo-512.png" width="256"
+       alt="BaseWatch logo: binoculars below a lifeguard tower, one lens showing a wallet and the other a blockchain, against a beach sunset">
+</p>
+
 `basewatch` shows every USDC and ETH balance change of the wallets you name,
 from the moment it starts. Each change is shown as **from ──▶ to**, so a run of
 payments reads as a chain. It's built for live demos, such as x402 payments:
