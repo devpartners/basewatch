@@ -1,0 +1,23 @@
+{
+  "name": "basewatch",
+  "version": "0.1.0",
+  "description": "Watch Base wallets live and show every balance change since the tool started",
+  "type": "module",
+  "bin": {
+    "basewatch": "bin/basewatch.js"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "viem": "2.57.16"
+  }
+}
