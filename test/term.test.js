@@ -17,7 +17,8 @@ test('image protocol comes from what the terminal says it is', () => {
 test('inline images keep the cursor where it was', () => {
   const png = Buffer.alloc(5000, 7)
   const iterm = inlineImage('iterm', png, { rows: 3, cols: 6 })
-  assert.match(iterm, /^\x1b7\x1b\]1337;File=inline=1;size=5000;height=3;width=6;preserveAspectRatio=1:/)
+  const name = Buffer.from('basewatch-logo.png').toString('base64')
+  assert.ok(iterm.startsWith(`\x1b7\x1b]1337;File=name=${name};inline=1;size=5000;height=3;width=6;preserveAspectRatio=1:`))
   assert.ok(iterm.endsWith('\x07\x1b8'))
 
   const kitty = inlineImage('kitty', png, { rows: 3, cols: 6 })

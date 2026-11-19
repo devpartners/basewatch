@@ -35,7 +35,9 @@ export function logoPng(size) {
 export function inlineImage(protocol, png, { rows, cols }) {
   const data = png.toString('base64')
   if (protocol === 'iterm') {
-    return `${ESC}7${ESC}]1337;File=inline=1;size=${png.length};height=${rows};width=${cols};preserveAspectRatio=1:${data}${BEL}${ESC}8`
+    // The name is what iTerm2's "Allow Terminal-Initiated Display?" prompt shows.
+    const name = Buffer.from('basewatch-logo.png').toString('base64')
+    return `${ESC}7${ESC}]1337;File=name=${name};inline=1;size=${png.length};height=${rows};width=${cols};preserveAspectRatio=1:${data}${BEL}${ESC}8`
   }
   if (protocol === 'kitty') {
     // q=2 keeps kitty from answering on stdin; C=1 keeps the cursor still.

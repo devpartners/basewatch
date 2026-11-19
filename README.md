@@ -175,6 +175,12 @@ corner of the live view. `--help` opens with it too. iTerm2 also gets a faint
 switches to 🚩 when the RPC keeps failing. Everything is restored on quit.
 Other terminals, tmux included, get no images. `--no-logo` turns it all off.
 
+**Before a demo in iTerm2:** the first time basewatch shows the logo, iTerm2
+asks **Allow Terminal-Initiated Display?** for `basewatch-logo.png`. Tick
+**Remember my choice** and click **Yes** in a rehearsal, so the question never
+pops up in front of an audience. A remembered **No** means iTerm2 stops showing
+the images. basewatch keeps running without them.
+
 ## Private keys
 
 - A new wallet's key is saved by default. Money sent to a wallet whose key was
