@@ -13,6 +13,13 @@ test('RPC errors never show the URL path, query or a key the provider quotes bac
   assert.ok(!errorText(new Error(`HTTP 401 for /v2/SECRETKEY123456`), RPC).includes('SECRETKEY123456'))
 })
 
+test('a key is masked as written in the URL, decoded, and as a bare query key', () => {
+  const url = 'https://bob:pw1@rpc.example.test/v2?k=AB%2BCD%3DEF123&q=GH+IJ+KL+MN&BAREKEY12345&network=base'
+  const text = cleanText('echo AB%2BCD%3DEF123 AB+CD=EF123 GH+IJ+KL+MN GH IJ KL MN BAREKEY12345 bob pw1 on base v2', url)
+  for (const s of ['AB%2BCD', 'AB+CD=EF123', 'GH+IJ', 'GH IJ', 'BAREKEY', 'bob', 'pw1']) assert.ok(!text.includes(s), text)
+  assert.match(text, /on base v2$/, 'short path and query parts that are ordinary words stay')
+})
+
 test('RPC text loses control characters that could clear the screen or fake a line', () => {
   const hostile = new Error('boom\x1b[2J\x1b]2;owned\x07\r  ✓ all checks passed\x9b')
   for (const text of [providerError(hostile, RPC), errorText(hostile, RPC), cleanText(hostile.message)]) {

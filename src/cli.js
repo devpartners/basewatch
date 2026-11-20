@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util'
 import { readFileSync } from 'node:fs'
 import { NETWORKS, assetsFor, explorerFor } from './networks.js'
 import { resolveWallets } from './wallets.js'
-import { RUN_OPTIONS, timing, rpcFrom } from './options.js'
+import { RUN_OPTIONS, timing, rpcFrom, keyDirFrom } from './options.js'
 import { makeClient, errorText, rpcHost } from './chain.js'
 import { Tracker } from './tracker.js'
 import { Watcher } from './watcher.js'
@@ -128,7 +128,7 @@ export async function main(argv) {
   let wallets
   try {
     wallets = resolveWallets(args.positionals, {
-      keyDir: o['key-dir'] ?? '.wallets',
+      keyDir: keyDirFrom(o),
       save: !o['no-save'],
       keychain: o.keychain,
       showKey: o['show-key'],
@@ -172,22 +172,38 @@ export async function main(argv) {
   else runJSON(ui)
 }
 
-// `cleanup` returns the last text to print. Exits only once that text has
-// reached the pipe: a pipe drains after the write call returns, and exiting
-// sooner cuts the summary short.
-function onExit(cleanup) {
+// `cleanup` returns the last text to print: the summary. basewatch exits only
+// once that text has reached the reader, since a pipe drains after the write
+// call returns and exiting sooner cuts the summary short. A reader that has
+// stopped reading, such as `less` waiting for a key, is waited for, with a
+// note on stderr; a second Ctrl-C quits without the summary, with exit code 1.
+export function onExit(cleanup, {
+  out = process.stdout,
+  err = process.stderr,
+  exit = (code) => process.exit(code),
+  events = process,
+  noteAfterMs = 2000,
+} = {}) {
   let done = false
   const finish = () => {
-    if (done) return
+    if (done) {
+      err.write('basewatch: quit before the reader took the summary\n')
+      return exit(1)
+    }
     done = true
-    process.stdout.write(cleanup(), () => process.exit(0))
-    setTimeout(() => process.exit(0), 3000) // a reader that never drains
+    const note = setTimeout(
+      () => err.write('basewatch: waiting for the reader to take the summary; Ctrl-C again quits without it\n'),
+      noteAfterMs,
+    )
+    note.unref?.()
+    out.write(cleanup(), (e) => {
+      clearTimeout(note)
+      exit(e && e.code !== 'EPIPE' ? 1 : 0)
+    })
   }
-  process.on('SIGINT', finish)
-  process.on('SIGTERM', finish)
-  process.on('SIGHUP', finish)
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) events.on(signal, finish)
   // A closed pipe (e.g. `| head`) ends the run quietly.
-  process.stdout.on('error', (e) => (e.code === 'EPIPE' ? process.exit(0) : finish()))
+  out.on('error', (e) => (e.code === 'EPIPE' ? exit(0) : finish()))
   return finish
 }
 

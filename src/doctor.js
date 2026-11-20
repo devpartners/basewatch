@@ -7,7 +7,7 @@ import { createRequire } from 'node:module'
 import { NETWORKS, assetsFor, explorerFor } from './networks.js'
 import { makeClient, readBalances, fetchTransfers, rpcHost, providerError } from './chain.js'
 import { parseSpec, labelsFor, rejectRepeats, checkKeyStores, checkAddress, addressFromKey, keychainRead } from './wallets.js'
-import { RUN_OPTIONS, timing, rpcFrom } from './options.js'
+import { RUN_OPTIONS, timing, rpcFrom, keyDirFrom } from './options.js'
 import { makeStyle, fmtAmount, num, shortAddr } from './format.js'
 
 export const HELP = `basewatch doctor: check that basewatch can run here, and say what to fix if not
@@ -34,9 +34,10 @@ Options
   --no-color           no colors (NO_COLOR is honoured too)
   -h, --help           show this help
 
-The other run options are taken too. --interval and --confirmations are
-checked, and so are --key-dir, --keychain, --no-save and --show-key when a
-new wallet is named; the rest need no check.
+The other run options are taken too. --interval, --confirmations and
+--keychain are checked, and so are --key-dir, --no-save and --show-key when
+a new wallet is named; the rest need no check. The log query and balance
+read stay --confirmations blocks behind the newest block, as a run does.
 `
 
 const LOG_RANGE = 100n // the most blocks one watcher poll asks for
@@ -131,8 +132,9 @@ export async function doctor(argv, deps = {}) {
       fail('explorer', e.message)
     }
     ok('explorer', explorer, o.explorer ? '[flag --explorer]' : '[default]')
+    let polling
     try {
-      timing(o)
+      polling = timing(o)
     } catch (e) {
       fail('options', e.message)
     }
@@ -153,14 +155,15 @@ export async function doctor(argv, deps = {}) {
     } catch (e) {
       fail('wallet', e.message, e.message.startsWith('label') ? 'give each wallet its own =label' : undefined)
     }
+    // Run even with no new wallet, as a run does: --keychain needs macOS anyway.
     const fresh = named.filter((w) => w.isNew)
+    const keyDir = keyDirFrom(o)
+    try {
+      checkKeyStores(fresh.map((w) => w.label), { keyDir, save: !o['no-save'], keychain: o.keychain, showKey: o['show-key'] })
+    } catch (e) {
+      fail(fresh.length ? 'new keys' : 'options', e.message)
+    }
     if (fresh.length) {
-      const keyDir = o['key-dir'] ?? '.wallets'
-      try {
-        checkKeyStores(fresh.map((w) => w.label), { keyDir, save: !o['no-save'], keychain: o.keychain, showKey: o['show-key'] })
-      } catch (e) {
-        fail('new keys', e.message)
-      }
       const stores = [!o['no-save'] && keyDir, o.keychain && 'the Keychain', o['show-key'] && 'the screen'].filter(Boolean)
       ok('new keys', `can be stored: ${stores.join(', ')}`)
     }
@@ -187,7 +190,7 @@ export async function doctor(argv, deps = {}) {
     else ok('newest block', `${num(head.number)}, ${age} s old`, t2)
 
     const owners = wallets.length ? wallets.map((w) => w.address) : [PLACEHOLDER]
-    const to = head.number - 2n
+    const to = head.number - BigInt(polling.confirmations)
     const [logs, t3] = await call(
       'log query',
       () => fetchTransfers(client, [net.usdc], owners, to - LOG_RANGE + 1n, to),

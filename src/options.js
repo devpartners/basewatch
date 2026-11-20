@@ -46,3 +46,9 @@ export function rpcFrom(o, env, net) {
   if (env.BASE_RPC_URL) return [env.BASE_RPC_URL, '[env BASE_RPC_URL]']
   return [net.rpc, '[default]']
 }
+
+// An empty --key-dir (say, from an unset shell variable) counts as unset too:
+// passed on, it would mean the current folder.
+export function keyDirFrom(o) {
+  return o['key-dir'] || '.wallets'
+}

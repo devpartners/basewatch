@@ -72,8 +72,11 @@ export function rpcHost(url) {
   }
 }
 
-// The parts of an RPC URL that may be an API key, longest first: the login,
-// path segments and query values long enough to be one.
+// The parts of an RPC URL that may be an API key, longest first, each as
+// written, percent-decoded and with "+" read as a space: the login from 3
+// characters, and the path segments, query values and bare query keys from
+// 8. Shorter path and query parts ("v2", "base") are too often ordinary words
+// to blank out of every message, and providers don't issue keys that short.
 function urlSecrets(rpcUrl) {
   let u
   try {
@@ -82,14 +85,27 @@ function urlSecrets(rpcUrl) {
     return []
   }
   const found = new Set()
-  for (const part of [u.username, u.password, ...u.pathname.split('/'), ...u.searchParams.values()]) {
-    if (!part) continue
-    found.add(part)
-    try {
-      found.add(decodeURIComponent(part))
-    } catch {}
+  const add = (part, min) => {
+    for (const form of [part, decoded(part), decoded(part.replace(/\+/g, ' '))]) {
+      if (form && form.length >= min) found.add(form)
+    }
   }
-  return [...found].filter((p) => p.length >= 8).sort((a, b) => b.length - a.length)
+  add(u.username, 3)
+  add(u.password, 3)
+  for (const segment of u.pathname.split('/')) add(segment, 8)
+  for (const pair of u.search.slice(1).split('&')) {
+    const eq = pair.indexOf('=')
+    add(eq < 0 ? pair : pair.slice(eq + 1), 8)
+  }
+  return [...found].sort((a, b) => b.length - a.length)
+}
+
+function decoded(part) {
+  try {
+    return decodeURIComponent(part)
+  } catch {
+    return null
+  }
 }
 
 // Text from an RPC, made safe to print: control characters, which could clear

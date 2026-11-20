@@ -81,7 +81,8 @@ basewatch doctor
 - Every setting shows where its value came from: a flag, an environment
   variable, or the default.
 - The RPC checks are real calls, timed: chain ID, newest block, the same USDC
-  log query a run makes, and a balance read. A wrong network names the flag to
+  log query a run makes, and a balance read, both `--confirmations` blocks
+  behind the newest, as a run reads them. A wrong network names the flag to
   change. A provider's error is printed whole.
 - A key is shown only as the address it gives and its length. An RPC URL's path
   is hidden, since it may hold an API key.
@@ -155,6 +156,11 @@ basewatch --plain 0xebDb…=buyer | tee -i demo.log
 basewatch --json  0xebDb…=buyer > demo.ndjson
 ```
 
+After Ctrl-C, basewatch waits until whatever reads its output has taken the
+whole summary. A reader that has stopped reading, such as `less` waiting for
+a key, is waited for, and basewatch says so on stderr. Press Ctrl-C again to
+quit without the summary; the exit code is then 1.
+
 ### Keys
 
 In the full-screen view:
@@ -211,7 +217,8 @@ the images. basewatch keeps running without them.
   directory gets its own `.gitignore` (`*`), so the keys can't be committed
   from any repository. For that to hold, the key directory must be new,
   empty, or one basewatch made before. A folder that already holds other
-  files, such as a project's root, is refused rather than changed.
+  files, such as a project's root, is refused rather than changed, and so is
+  one you can't write to. An empty `--key-dir` counts as not given.
 - An existing key file is never overwritten. The Keychain item for a new
   wallet must not already exist either. Both are checked for every new wallet
   before any key is made, so a refusal leaves nothing behind.

@@ -54,3 +54,10 @@ test('an empty --rpc or BASE_RPC_URL counts as unset', async () => {
   assert.deepEqual(rpcFrom({}, { BASE_RPC_URL: 'https://x.test' }, net), ['https://x.test', '[env BASE_RPC_URL]'])
   assert.deepEqual(rpcFrom({ rpc: 'https://y.test' }, { BASE_RPC_URL: 'https://x.test' }, net), ['https://y.test', '[flag --rpc]'])
 })
+
+test('an empty --key-dir counts as unset, not as the current folder', async () => {
+  const { keyDirFrom } = await import('../src/options.js')
+  assert.equal(keyDirFrom({ 'key-dir': '' }), '.wallets')
+  assert.equal(keyDirFrom({}), '.wallets')
+  assert.equal(keyDirFrom({ 'key-dir': 'keys' }), 'keys')
+})

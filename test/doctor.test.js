@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, writeFileSync, readdirSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, writeFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { privateKeyToAccount } from 'viem/accounts'
@@ -9,12 +9,12 @@ import { doctor } from '../src/doctor.js'
 const KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d'
 const ADDRESS = privateKeyToAccount(KEY).address
 
-function fakeClient({ chainId = 8453, age = 1, getLogs, balance = 2_202_000n } = {}) {
+function fakeClient({ chainId = 8453, age = 1, getLogs, balance = 2_202_000n, seen = {} } = {}) {
   return {
     getChainId: async () => chainId,
     getBlock: async () => ({ number: 1_000n, timestamp: BigInt(Math.floor(Date.now() / 1000) - age) }),
-    getLogs: getLogs ?? (async () => []),
-    multicall: async ({ contracts }) => contracts.map(() => balance),
+    getLogs: getLogs ?? (async ({ toBlock }) => ((seen.logsTo = toBlock), [])),
+    multicall: async ({ contracts, blockNumber }) => ((seen.balancesAt = blockNumber), contracts.map(() => balance)),
   }
 }
 
@@ -134,4 +134,43 @@ test('an empty BASE_RPC_URL counts as unset', async () => {
   assert.equal(code, 0)
   assert.equal(url, 'https://base-rpc.publicnode.com')
   assert.match(out, /✓ rpc +base-rpc\.publicnode\.com {2}\[default\]/)
+})
+
+test('the log query and balance read stay --confirmations blocks behind, as a run does', async () => {
+  const seen = {}
+  assert.equal((await run([], { client: fakeClient({ seen }) })).code, 0)
+  assert.deepEqual(seen, { logsTo: 998n, balancesAt: 998n })
+  assert.equal((await run(['--confirmations', '0'], { client: fakeClient({ seen }) })).code, 0)
+  assert.deepEqual(seen, { logsTo: 1_000n, balancesAt: 1_000n })
+})
+
+test('--keychain off macOS fails in doctor even with no new wallet, as it does in a run', async () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')
+  Object.defineProperty(process, 'platform', { value: 'linux' })
+  try {
+    const { code, out, url } = await run(['--keychain', ADDRESS])
+    assert.equal(code, 1)
+    assert.match(out, /✗ options +--keychain needs macOS/)
+    assert.equal(url, undefined, 'stops before any RPC call')
+  } finally {
+    Object.defineProperty(process, 'platform', platform)
+  }
+})
+
+test('doctor refuses a key folder that cannot be made, and treats an empty --key-dir as unset', { skip: process.getuid?.() === 0 && 'root can write anywhere' }, async () => {
+  const home = process.cwd()
+  const locked = mkdtempSync(join(tmpdir(), 'basewatch-doctor-'))
+  chmodSync(locked, 0o500)
+  try {
+    const refused = await run(['new=buyer', '--key-dir', join(locked, 'keys')])
+    assert.equal(refused.code, 1)
+    assert.match(refused.out, /✗ new keys +can't make --key-dir .*isn't writable/)
+    process.chdir(mkdtempSync(join(tmpdir(), 'basewatch-doctor-')))
+    const empty = await run(['new=buyer', '--key-dir', ''])
+    assert.equal(empty.code, 0)
+    assert.match(empty.out, /✓ new keys +can be stored: \.wallets/)
+  } finally {
+    process.chdir(home)
+    chmodSync(locked, 0o700)
+  }
 })

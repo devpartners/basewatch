@@ -3,8 +3,8 @@
 // --show-key asks for them to be displayed.
 import { getAddress, isAddress } from 'viem'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
-import { chmodSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { join, relative, resolve, isAbsolute } from 'node:path'
+import { accessSync, chmodSync, constants, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join, relative, resolve, isAbsolute } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { userInfo } from 'node:os'
 import { shortAddr } from './format.js'
@@ -24,7 +24,8 @@ export function parseSpec(raw) {
   const url = URL_START.test(raw)
   const eq = raw.lastIndexOf('=')
   // In a URL, the "=" of "?tab=tokens" belongs to the URL; it is not a label.
-  const inQuery = url && /[?&#][^?&#=/]*$/.test(raw.slice(0, eq))
+  // A "#tokentxns" fragment has no "=" of its own, so "#tokentxns=buyer" is.
+  const inQuery = url && /[?&][^?&#=/]*$/.test(raw.slice(0, eq))
   if (eq > 0 && !inQuery && LABEL.test(raw.slice(eq + 1))) {
     source = raw.slice(0, eq)
     label = raw.slice(eq + 1)
@@ -124,28 +125,43 @@ export function keychainWrite(service, key) {
 
 // Keys go only in a folder that git is sure to ignore: one basewatch makes
 // (with a "*" .gitignore), one that is empty, or one basewatch made before.
-// Any other folder, such as a project's root, is refused rather than changed.
-// Returns 'missing', 'empty' or 'ours'; reads only.
+// Any other folder, such as a project's root, is refused rather than changed,
+// and so is one that can't be written to. Returns 'missing', 'empty' or
+// 'ours'; reads only.
 export function keyDirState(dir) {
   const d = resolve(dir)
   let st
   try {
     st = statSync(d)
   } catch (e) {
-    if (e.code === 'ENOENT') return 'missing'
-    throw new Error(`can't use --key-dir ${dir}: ${e.message}`)
+    if (e.code !== 'ENOENT') throw new Error(`can't use --key-dir ${dir}: ${e.message}`)
+    let parent = dirname(d)
+    while (!existsSync(parent) && dirname(parent) !== parent) parent = dirname(parent)
+    if (!writable(parent)) throw new Error(`can't make --key-dir ${dir}: ${parent} isn't writable`)
+    return 'missing'
   }
   if (!st.isDirectory()) throw new Error(`--key-dir ${dir} is a file, not a folder`)
+  if (!writable(d)) throw new Error(`can't save keys in --key-dir ${dir}: it isn't writable`)
   const entries = readdirSync(d)
   if (!entries.length) return 'empty'
   let ignore = null
   try {
     ignore = readFileSync(join(d, '.gitignore'), 'utf8')
   } catch {}
-  if (ignore?.trim() === '*') return 'ours'
+  // Exactly what basewatch writes. Git keeps a leading space, so " *" is not "*".
+  if (/^\*\r?\n?$/.test(ignore ?? '')) return 'ours'
   throw new Error(
     `--key-dir ${dir} already holds other files, and git might not ignore keys saved there; name a new or empty folder (basewatch gives it its own .gitignore)`,
   )
+}
+
+function writable(d) {
+  try {
+    accessSync(d, constants.W_OK | constants.X_OK)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function makeKeyDir(dir) {

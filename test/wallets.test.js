@@ -1,10 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { privateKeyToAccount } from 'viem/accounts'
-import { parseSpec, resolveWallets } from '../src/wallets.js'
+import { parseSpec, resolveWallets, keyDirState } from '../src/wallets.js'
 
 const A = '0xebDbdC98C7AA8DA34f2A443Dd4C8895D05cDBA3E'
 
@@ -24,6 +24,8 @@ test('an explorer URL gives a wallet only from its /address/ page', () => {
   const tx = '0x' + 'ab'.repeat(32)
   assert.deepEqual(parseSpec(`https://base.blockscout.com/address/${A}?tab=token_transfers`), { kind: 'address', address: A, label: undefined })
   assert.deepEqual(parseSpec(`https://basescan.org/address/${A}#tokentxns`).label, undefined)
+  assert.deepEqual(parseSpec(`https://basescan.org/address/${A}#tokentxns=buyer`), { kind: 'address', address: A, label: 'buyer' })
+  assert.deepEqual(parseSpec(`https://base.blockscout.com/address/${A}?tab=txs#top=buyer`).label, 'buyer')
   assert.deepEqual(parseSpec(`https://basescan.org/address/${A}=buyer`), { kind: 'address', address: A, label: 'buyer' })
   assert.deepEqual(parseSpec(`https://basescan.org/address/${A}?a=b=buyer`).label, 'buyer')
   assert.deepEqual(parseSpec(`https://www.oklink.com/base/address/${A.toLowerCase()}`).address, A.toLowerCase())
@@ -90,4 +92,32 @@ test('keys go only in a folder git is sure to ignore', () => {
   const file = join(project, 'notes.txt')
   writeFileSync(file, '')
   assert.throws(() => resolveWallets(['new'], { keyDir: file }), /is a file, not a folder/)
+})
+
+test('only the .gitignore basewatch writes marks a folder as its own', () => {
+  const folder = (ignore) => {
+    const d = mkdtempSync(join(tmpdir(), 'basewatch-test-'))
+    writeFileSync(join(d, '.gitignore'), ignore)
+    return d
+  }
+  assert.equal(keyDirState(folder('*\n')), 'ours')
+  assert.equal(keyDirState(folder('*')), 'ours')
+  // Git keeps a leading space, so " *" ignores nothing basewatch saves.
+  assert.throws(() => keyDirState(folder(' *\n')), /already holds other files/)
+  assert.throws(() => keyDirState(folder('*\n!*.key\n')), /already holds other files/)
+})
+
+test('a key folder that cannot be written to is refused before any key is made', { skip: process.getuid?.() === 0 && 'root can write anywhere' }, () => {
+  const locked = mkdtempSync(join(tmpdir(), 'basewatch-test-'))
+  mkdirSync(join(locked, 'empty'))
+  chmodSync(join(locked, 'empty'), 0o500)
+  chmodSync(locked, 0o500)
+  try {
+    assert.throws(() => keyDirState(join(locked, 'keys', 'demo')), /can't make --key-dir .*isn't writable/)
+    assert.throws(() => keyDirState(join(locked, 'empty')), /can't save keys in --key-dir .*isn't writable/)
+    assert.throws(() => resolveWallets(['new=buyer'], { keyDir: join(locked, 'keys') }), /isn't writable/)
+  } finally {
+    chmodSync(locked, 0o700)
+    chmodSync(join(locked, 'empty'), 0o700)
+  }
 })
