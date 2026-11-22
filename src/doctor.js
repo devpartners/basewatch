@@ -5,7 +5,9 @@ import { parseArgs } from 'node:util'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { NETWORKS, assetsFor, explorerFor } from './networks.js'
-import { makeClient, readBalances, fetchTransfers, providerError, plainHttp, PLAIN_HTTP_RISK } from './chain.js'
+import {
+  makeClient, readBalances, fetchTransfers, providerError, plainHttp, PLAIN_HTTP_RISK, MalformedLog,
+} from './chain.js'
 import { parseSpec, labelsFor, rejectRepeats, checkKeyStores, checkAddress, addressFromKey, keychainRead } from './wallets.js'
 import { RUN_OPTIONS, timing, rpcFrom, keyDirFrom } from './options.js'
 import { makeStyle, fmtAmount, num, shortAddr } from './format.js'
@@ -89,13 +91,14 @@ export async function doctor(argv, deps = {}) {
     throw new Stop()
   }
   // A real call, timed. A failure prints the provider's whole error, then stops.
+  // `hint` may be a function of the error, where the fix depends on it.
   const call = async (what, fn, hint) => {
     const t0 = performance.now()
     try {
       const value = await fn()
       return [value, `${Math.round(performance.now() - t0)} ms`]
     } catch (e) {
-      fail(what, providerError(e, rpcUrl), hint)
+      fail(what, providerError(e, rpcUrl), typeof hint === 'function' ? hint(e) : hint)
     }
   }
 
@@ -195,9 +198,13 @@ export async function doctor(argv, deps = {}) {
     const [logs, t3] = await call(
       'log query',
       () => fetchTransfers(client, [net.usdc], owners, to - LOG_RANGE + 1n, to),
-      'this RPC refuses or limits eth_getLogs, which basewatch needs to see x402 payments ' +
-        '(the buyer never sends a transaction itself). mainnet.base.org is one such RPC. ' +
-        `Use the default (${net.rpc}) or a provider that allows log queries, with --rpc`,
+      (e) =>
+        e instanceof MalformedLog
+          ? 'this RPC answered the log query, but with a log that has a missing or impossible field, ' +
+            'so basewatch uses none of that answer; use another --rpc'
+          : 'this RPC refuses or limits eth_getLogs, which basewatch needs to see x402 payments ' +
+            '(the buyer never sends a transaction itself). mainnet.base.org is one such RPC. ' +
+            `Use the default (${net.rpc}) or a provider that allows log queries, with --rpc`,
     )
     ok('log query', `USDC transfers over ${LOG_RANGE} blocks: ${logs.length}`, t3)
 

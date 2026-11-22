@@ -63,6 +63,7 @@ test('a Transfer log with a field the history cannot trust is refused, and none 
     'a block before the ones asked for': { ...sound, blockNumber: 9n, args },
     'no place in its block': { ...sound, logIndex: null, args },
     'a place that is not a number': { ...sound, logIndex: NaN, args },
+    'a place before the first': { ...sound, logIndex: -1, args },
   }
   for (const [what, log] of Object.entries(broken)) {
     // A sound log first: nothing is returned, so nothing is half recorded.

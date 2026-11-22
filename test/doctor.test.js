@@ -87,6 +87,18 @@ test("a refused log query prints the provider's whole error and stops there", as
   assert.ok(!out.includes('balances'), 'nothing after the first failure')
 })
 
+test('a log query answered with a malformed log gets a hint about the answer, not about a refusal', async () => {
+  const getLogs = async ({ args, address }) =>
+    args.from
+      ? [{ blockNumber: 998n, logIndex: 0, transactionHash: '0x' + 'ab'.repeat(32), address: address[0], args: { from: ADDRESS, to: 'nowhere', value: 1n } }]
+      : []
+  const { code, out } = await run([ADDRESS], { client: fakeClient({ getLogs }) })
+  assert.equal(code, 1)
+  assert.match(out, /✗ log query +the RPC sent a Transfer log that is not well formed\n {4}hint: this RPC answered the log query, but with a log that has a missing or impossible field/)
+  assert.ok(!out.includes('eth_getLogs'), 'the RPC did not refuse the query')
+  assert.ok(!out.includes('balances'), 'nothing after the first failure')
+})
+
 test('an RPC URL path is hidden, since it may hold an API key', async () => {
   const { out } = await run(['--rpc', 'https://base.example.test/v2/SECRET123'])
   assert.match(out, /✓ rpc +base\.example\.test \(path hidden: it may hold a key\) {2}\[flag --rpc\]/)

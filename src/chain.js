@@ -57,7 +57,7 @@ export async function fetchTransfers(client, tokens, owners, fromBlock, toBlock)
     // The history is built from these fields, and the counterparty is shown.
     // An RPC's reply can carry `args` of its own, which viem keeps in place of
     // the ones it decoded, so they are checked here, before any is recorded.
-    if (!wellFormed(l, fromBlock, toBlock)) throw new Error('the RPC sent a Transfer log that is not well formed')
+    if (!wellFormed(l, fromBlock, toBlock)) throw new MalformedLog()
     unique.set(`${l.transactionHash}:${l.logIndex}`, {
       block: l.blockNumber,
       logIndex: l.logIndex,
@@ -73,6 +73,14 @@ export async function fetchTransfers(client, tokens, owners, fromBlock, toBlock)
   return [...unique.values()].sort((a, b) =>
     a.block === b.block ? a.logIndex - b.logIndex : a.block < b.block ? -1 : 1,
   )
+}
+
+// Its own kind of error, so doctor can tell an answer it will not use from an
+// RPC that refused the query.
+export class MalformedLog extends Error {
+  constructor() {
+    super('the RPC sent a Transfer log that is not well formed')
+  }
 }
 
 // The block must be one that was asked for, and the index a whole number,
@@ -103,8 +111,10 @@ export function rpcHost(url) {
 // True for an RPC URL that is plain http to another machine: anyone on the
 // network between can read and change what it answers. A node on this machine
 // (anvil, a local Base node) is reached without leaving it, so it doesn't count.
-// Only names sure to mean this machine are let through: "anvil.localhost" is
-// not, since the system's resolver decides where that goes.
+// The loopback addresses always mean this machine. The name "localhost" is let
+// through as well: the system's resolver decides where it goes, but every
+// system ships with it pointing here, and it is how a local node is usually
+// given. "anvil.localhost" has no such entry, so it is not let through.
 export function plainHttp(url) {
   let u
   try {
