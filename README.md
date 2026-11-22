@@ -274,7 +274,11 @@ open a public issue for one.
 
 ## License
 
-[MIT](LICENSE). Changes are listed in the [changelog](CHANGELOG.md).
+[MIT](LICENSE). Copyright © 2026 Bill Wilder. basewatch is published by
+DevPartners ([devpartners.com](https://devpartners.com)), and its npm package
+is `@devpartners/basewatch`.
+
+Changes are listed in the [changelog](CHANGELOG.md).
 
 basewatch is an independent project. It is not affiliated with, endorsed by or
 sponsored by Base or Coinbase. Base, USDC and the other names used here belong

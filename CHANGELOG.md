@@ -3,6 +3,12 @@
 Notable changes to basewatch, newest first. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## 0.1.1 - 2026-11-22
+
+- The npm package is named `@devpartners/basewatch`. The command is still
+  `basewatch`.
+- The licence names Bill Wilder as the copyright holder.
+
 ## 0.1.0 - 2026-11-22
 
 First release.

@@ -1,6 +1,6 @@
 {
-  "name": "basewatch",
-  "version": "0.1.0",
+  "name": "@devpartners/basewatch",
+  "version": "0.1.1",
   "description": "Watch Base wallets live and show every balance change since the tool started",
   "keywords": [
     "base",
@@ -22,7 +22,10 @@
     "type": "git",
     "url": "git+https://github.com/devpartners/basewatch.git"
   },
-  "author": "DevPartners (https://github.com/devpartners)",
+  "author": "Bill Wilder (https://devpartners.com)",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "bin": {
     "basewatch": "bin/basewatch.js"
