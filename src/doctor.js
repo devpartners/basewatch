@@ -5,7 +5,7 @@ import { parseArgs } from 'node:util'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { NETWORKS, assetsFor, explorerFor } from './networks.js'
-import { makeClient, readBalances, fetchTransfers, rpcHost, providerError } from './chain.js'
+import { makeClient, readBalances, fetchTransfers, providerError, plainHttp, PLAIN_HTTP_RISK } from './chain.js'
 import { parseSpec, labelsFor, rejectRepeats, checkKeyStores, checkAddress, addressFromKey, keychainRead } from './wallets.js'
 import { RUN_OPTIONS, timing, rpcFrom, keyDirFrom } from './options.js'
 import { makeStyle, fmtAmount, num, shortAddr } from './format.js'
@@ -78,9 +78,9 @@ export async function doctor(argv, deps = {}) {
   const ok = (what, detail, note) => line(s.green('✓'), what, detail, note)
   const skip = (what, detail) => line(s.dim('–'), what, s.dim(detail))
   let warnings = 0
-  const warn = (what, detail, hint) => {
+  const warn = (what, detail, hint, note) => {
     warnings++
-    line(s.yellow('!'), what, detail)
+    line(s.yellow('!'), what, detail, note)
     if (hint) write(`    ${s.yellow('hint:')} ${hint}\n`)
   }
   const fail = (what, detail, hint) => {
@@ -124,7 +124,8 @@ export async function doctor(argv, deps = {}) {
     if (!/^https?:$/.test(parsed.protocol)) fail('rpc', `${parsed.protocol} URL`, 'use an https:// RPC URL')
     // A path or query often holds an API key, so only the host is shown.
     const hidden = parsed.pathname.length > 1 || parsed.search ? s.dim(' (path hidden: it may hold a key)') : ''
-    ok('rpc', `${parsed.host}${hidden}`, source)
+    if (plainHttp(url)) warn('rpc', `${parsed.host}${hidden}, over plain http`, PLAIN_HTTP_RISK, source)
+    else ok('rpc', `${parsed.host}${hidden}`, source)
     let explorer
     try {
       explorer = explorerFor(net, o.explorer)

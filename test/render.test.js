@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { Tracker } from '../src/tracker.js'
 import { makeStyle, stripAnsi, visibleLength } from '../src/format.js'
 import { NETWORKS, assetsFor } from '../src/networks.js'
-import { renderFrame, renderSummary, washIn, flag, WAVE_MS } from '../src/render.js'
+import { renderFrame, renderSummary, renderPlainStart, startJSON, washIn, flag, WAVE_MS } from '../src/render.js'
 
 const net = NETWORKS.mainnet
 const BUYER = '0x1111111111111111111111111111111111111111'
@@ -38,6 +38,23 @@ test('the frame fills the screen and ends with the keys', () => {
   assert.ok(lines.some((l) => /━━ 1 buyer {2}0x1111/.test(l)), 'wallets are numbered for their keys')
   assert.ok(lines.some((l) => /━━ 2 seller/.test(l)))
   assert.ok(lines.every((l) => !l.includes('https://')), 'no URLs on the live screen')
+})
+
+test('a plain http RPC is marked where it cannot be cut off, and JSON keeps the bare host', () => {
+  const ui = makeUi()
+  ui.rpcUrl = 'http://a-long-host-name.rpc.example.test:8545/v2/key'
+  for (const width of [50, 60, 80, 140]) {
+    const lines = renderFrame(ui, { width, height: 24, now: 60_000, mark: { rows: 3, cols: 8 } })
+    assert.match(stripAnsi(lines[1]), /^plain http · history since block/, `at ${width} columns`)
+  }
+  assert.match(renderPlainStart(ui), /a-long-host-name\.rpc\.example\.test:8545 \(plain http\) · history since block/)
+  assert.equal(startJSON(ui).rpc, 'a-long-host-name.rpc.example.test:8545')
+  // https, and a node on this machine, carry no mark.
+  for (const rpcUrl of ['https://base-rpc.publicnode.com', 'http://localhost:8545']) {
+    const quiet = { ...ui, rpcUrl }
+    assert.match(stripAnsi(renderFrame(quiet, { width: 140, height: 24, now: 60_000 })[1]), /^history since block/)
+    assert.ok(!renderPlainStart(quiet).includes('plain http'))
+  }
 })
 
 test('without a keyboard there are no numbers and no key hints', () => {

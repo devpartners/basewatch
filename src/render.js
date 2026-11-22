@@ -4,7 +4,7 @@ import {
   fmtAmount, sparkline, visibleLength, truncate, sliceVisible, padEnd, padStart, link,
   clock, duration, num, shortAddr, shortHash,
 } from './format.js'
-import { rpcHost } from './chain.js'
+import { rpcHost, rpcShown, plainHttp } from './chain.js'
 
 const FRESH_MS = 8000
 export const WAVE_MS = 900
@@ -191,7 +191,9 @@ export function renderFrame(ui, { width, height, now = Date.now(), mark = null }
   const lines = [
     // The flag comes first so a narrow screen cuts the block number, not the status.
     `${s.bold('basewatch')}  ${ui.net.name}  ${flag(ui)}  ${s.dim('block')} ${num(watcher.head ?? tracker.lastBlock)}  ${s.dim('up')} ${duration(now - ui.startedAt)}`,
-    s.dim(`history since block ${num(tracker.startBlock)} (${clock(tracker.startTime)}) · ${rpcHost(ui.rpcUrl)}`),
+    // "plain http" leads its line for the same reason: a narrow screen cuts the host, not the mark.
+    (plainHttp(ui.rpcUrl) ? `${s.yellow('plain http')} ${s.dim('·')} ` : '') +
+      s.dim(`history since block ${num(tracker.startBlock)} (${clock(tracker.startTime)}) · ${rpcHost(ui.rpcUrl)}`),
     '',
   ].map((l) => skip + truncate(l, W - (mark ? mark.cols : 0)))
   const fixed = tracker.wallets.reduce((n, w) => n + 2 + (w.key ? 1 : 0) + tracker.assets.length, 0)
@@ -232,7 +234,7 @@ export function renderPlainStart(ui) {
   const t = ui.tracker
   const lw = Math.max(...t.wallets.map((w) => w.label.length))
   const out = [
-    `${s.bold('basewatch')}  ${ui.net.name}  ${s.dim(`${rpcHost(ui.rpcUrl)} · history since block ${num(t.startBlock)} (${clock(t.startTime)})`)}`,
+    `${s.bold('basewatch')}  ${ui.net.name}  ${s.dim(`${rpcShown(ui.rpcUrl)} · history since block ${num(t.startBlock)} (${clock(t.startTime)})`)}`,
   ]
   for (const w of t.wallets) {
     const bal = t.assets.map((a) => `${a.symbol} ${amount(ui, a.symbol, w.balances[a.symbol].start)}`).join('  ')

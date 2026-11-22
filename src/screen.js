@@ -2,7 +2,7 @@
 import { renderFrame, renderSummary, WAVE_MS } from './render.js'
 import { inlineImage, clearImages, moveTo, title, openUrl, logoPng } from './term.js'
 import { visibleLength, shortHash, num } from './format.js'
-import { rpcHost } from './chain.js'
+import { rpcShown } from './chain.js'
 
 const SPLASH_MIN_MS = 1200 // long enough to see, even when the RPC answers at once
 const MARK = { rows: 3, cols: 8 } // header logo: 3 rows tall; header text starts after 8 columns
@@ -68,7 +68,7 @@ export class Screen {
     const n = ui.tracker.wallets.length
     const text = [
       s.bold('basewatch'),
-      s.dim(`connecting to ${rpcHost(ui.rpcUrl)} · ${n} wallet${n === 1 ? '' : 's'}`),
+      s.dim(`connecting to ${rpcShown(ui.rpcUrl)} · ${n} wallet${n === 1 ? '' : 's'}`),
     ]
     const size = Math.min(16, rows - 6, Math.floor((cols - 4) / 2))
     const image = this.splashPng && size >= 6

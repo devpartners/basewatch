@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { Writable } from 'node:stream'
 import { onExit } from '../src/cli.js'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms))
 
@@ -48,4 +50,20 @@ test('a reader that takes the summary at once gets no note', async () => {
   await tick(20)
   assert.deepEqual(q.codes, [0])
   assert.equal(q.err(), '')
+})
+
+test('a run warns about a plain http RPC on another machine, and not about a node on this one', () => {
+  const bin = fileURLToPath(new URL('../bin/basewatch.js', import.meta.url))
+  const wallet = '0x1111111111111111111111111111111111111111'
+  // Nothing listens on either port, so each run ends at its first read, and
+  // nothing leaves this machine. 0.0.0.0 stands in for another machine: it is
+  // not a name basewatch can be sure means this one.
+  const run = (rpc) => spawnSync(process.execPath, [bin, '--plain', '--rpc', rpc, wallet], { encoding: 'utf8', timeout: 30_000 })
+  const far = run('http://0.0.0.0:1/v2/SECRETKEY12345')
+  assert.equal(far.status, 1)
+  assert.match(far.stderr, /^basewatch: warning: 0\.0\.0\.0:1 is reached over plain http, so anyone on the network between can read and change its answers; use an https:\/\/ RPC unless you trust that network\n/)
+  assert.ok(!far.stderr.includes('SECRETKEY12345'), 'the path, which may hold a key, is not shown')
+  const near = run('http://127.0.0.1:1')
+  assert.equal(near.status, 1)
+  assert.ok(!near.stderr.includes('warning'), near.stderr)
 })

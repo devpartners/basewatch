@@ -245,6 +245,13 @@ the images. basewatch keeps running without them.
   shows the payment.
 - The default RPC is publicnode. `mainnet.base.org` refuses `eth_getLogs`
   ("request limit reached").
+- An RPC's answers are not trusted further than they have to be. A redirect is
+  refused rather than followed, offchain lookups (CCIP-Read) are off, and a
+  `Transfer` log that is not well formed is an error, not a line of history.
+- A plain `http://` RPC on another machine gets a warning, from a run and from
+  `doctor`, and its host is marked `(plain http)`: anyone on the network
+  between can read and change its answers. A node on this machine
+  (`localhost`, `127.0.0.1`) is not marked.
 - Base produces a block every 0.2 s, so each poll covers several blocks.
 - A single failed RPC call is retried quietly. An error shows only when calls
   keep failing.

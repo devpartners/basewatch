@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { NETWORKS, assetsFor, explorerFor } from './networks.js'
 import { resolveWallets } from './wallets.js'
 import { RUN_OPTIONS, timing, rpcFrom, keyDirFrom } from './options.js'
-import { makeClient, errorText, rpcHost } from './chain.js'
+import { makeClient, errorText, rpcHost, plainHttp, PLAIN_HTTP_RISK } from './chain.js'
 import { Tracker } from './tracker.js'
 import { Watcher } from './watcher.js'
 import { makeStyle } from './format.js'
@@ -138,6 +138,12 @@ export async function main(argv) {
   }
 
   if (o['create-only']) return void process.stdout.write(renderCreated(wallets, net, explorer, style))
+
+  // Said before the live view opens, so it is in the scrollback afterwards;
+  // the view itself marks the host "(plain http)".
+  if (plainHttp(rpcUrl)) {
+    process.stderr.write(`basewatch: warning: ${rpcHost(rpcUrl)} is reached over plain http, so ${PLAIN_HTTP_RISK}\n`)
+  }
 
   const assets = assetsFor(net)
   const client = makeClient(net, rpcUrl)

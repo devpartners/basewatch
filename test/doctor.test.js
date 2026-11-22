@@ -41,6 +41,17 @@ test('a healthy setup passes every check, each setting with its source', async (
   assert.match(out, /all checks passed/)
 })
 
+test('a plain http RPC on another machine is a warning; a node on this machine is not', async () => {
+  const far = await run(['--rpc', 'http://192.168.1.20:8545/v2/key'])
+  assert.equal(far.code, 0)
+  assert.match(far.out, /! rpc +192\.168\.1\.20:8545 \(path hidden: it may hold a key\), over plain http {2}\[flag --rpc\]\n {4}hint: anyone on the network between can read and change its answers; use an https:\/\/ RPC/)
+  assert.match(far.out, /all checks passed, 1 warning/)
+  const near = await run(['--rpc', 'http://localhost:8545'])
+  assert.equal(near.code, 0)
+  assert.match(near.out, /✓ rpc +localhost:8545 {2}\[flag --rpc\]/)
+  assert.ok(!near.out.includes('warning'), near.out)
+})
+
 test('a key is shown as its address and length, never its characters', async () => {
   const { code, out } = await run(['env:BUYER_KEY=buyer'], { env: { BUYER_KEY: KEY } })
   assert.equal(code, 0)
