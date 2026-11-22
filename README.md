@@ -266,3 +266,16 @@ The history engine (`src/tracker.js`) is pure and unit-tested. The live
 behaviour has been checked against Base mainnet: on a busy Uniswap pool, every
 step's from equals the previous step's to, and the last to equals the balance
 read from the chain.
+
+## Security
+
+To report a security problem, see [SECURITY.md](SECURITY.md). Please don't
+open a public issue for one.
+
+## License
+
+[MIT](LICENSE). Changes are listed in the [changelog](CHANGELOG.md).
+
+basewatch is an independent project. It is not affiliated with, endorsed by or
+sponsored by Base or Coinbase. Base, USDC and the other names used here belong
+to their owners.

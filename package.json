@@ -2,6 +2,27 @@
   "name": "basewatch",
   "version": "0.1.0",
   "description": "Watch Base wallets live and show every balance change since the tool started",
+  "keywords": [
+    "base",
+    "wallet",
+    "usdc",
+    "x402",
+    "ethereum",
+    "blockchain",
+    "cli",
+    "terminal",
+    "demo",
+    "viem"
+  ],
+  "homepage": "https://github.com/devpartners/basewatch#readme",
+  "bugs": {
+    "url": "https://github.com/devpartners/basewatch/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devpartners/basewatch.git"
+  },
+  "author": "DevPartners (https://github.com/devpartners)",
   "type": "module",
   "bin": {
     "basewatch": "bin/basewatch.js"
