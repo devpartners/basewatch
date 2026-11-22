@@ -11,7 +11,13 @@ export function makeClient(net, rpcUrl, { retryCount = 2 } = {}) {
   return createPublicClient({
     chain: net.chain,
     cacheTime: 0,
-    transport: http(rpcUrl, { retryCount, timeout: 10_000 }),
+    // viem follows offchain lookups (CCIP-Read, EIP-3668) unless told not to:
+    // an RPC could answer a balance read with a list of URLs, and viem would
+    // request each one from this machine. Nothing basewatch reads needs one.
+    ccipRead: false,
+    // A redirect is the same reach by another route: followed, it sends the
+    // request, and for a 307 or 308 its body too, to whatever host the RPC names.
+    transport: http(rpcUrl, { retryCount, timeout: 10_000, fetchOptions: { redirect: 'error' } }),
   })
 }
 

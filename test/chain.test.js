@@ -1,6 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { providerError, errorText, fetchTransfers, cleanText } from '../src/chain.js'
+import { createServer } from 'node:http'
+import { once } from 'node:events'
+import { encodeErrorResult } from 'viem'
+import { providerError, errorText, fetchTransfers, cleanText, makeClient, readBalances } from '../src/chain.js'
+import { NETWORKS, assetsFor } from '../src/networks.js'
 
 const RPC = 'https://base-mainnet.example.test/v2/SECRETKEY123456?token=ANOTHERSECRET'
 
@@ -36,4 +40,79 @@ test('a log without a well-formed transaction hash keeps no hash, so it links to
   const client = { getLogs: async ({ args }) => (args.from ? [log(good, 0), log('0xabc\x1b[2J', 1)] : []) }
   const got = await fetchTransfers(client, ['0xusdc'], ['0x1111111111111111111111111111111111111111'], 10n, 10n)
   assert.deepEqual(got.map((l) => l.tx), [good, undefined])
+})
+
+test('an RPC that answers a balance read with an offchain lookup gets no request sent anywhere else', async (t) => {
+  const rpc = 'https://rpc.example.test/'
+  const offchainLookup = [{
+    name: 'OffchainLookup',
+    type: 'error',
+    inputs: [
+      { name: 'sender', type: 'address' },
+      { name: 'urls', type: 'string[]' },
+      { name: 'callData', type: 'bytes' },
+      { name: 'callbackFunction', type: 'bytes4' },
+      { name: 'extraData', type: 'bytes' },
+    ],
+  }]
+  const elsewhere = []
+  let rpcCalls = 0
+  // No network: every request lands here. The RPC's reply is the revert that
+  // asks a CCIP-Read client to fetch the listed URLs (EIP-3668).
+  t.mock.method(globalThis, 'fetch', async (url, init = {}) => {
+    if (String(url) !== rpc) {
+      elsewhere.push(String(url))
+      return new Response('0x')
+    }
+    rpcCalls++
+    const req = JSON.parse(init.body)
+    const data = encodeErrorResult({
+      abi: offchainLookup,
+      errorName: 'OffchainLookup',
+      args: [req.params[0].to, ['https://elsewhere.example.test/x'], '0x1234', '0xaabbccdd', '0x'],
+    })
+    return new Response(
+      JSON.stringify({ jsonrpc: '2.0', id: req.id, error: { code: 3, message: 'execution reverted', data } }),
+      { headers: { 'Content-Type': 'application/json' } },
+    )
+  })
+  const net = NETWORKS.mainnet
+  const client = makeClient(net, rpc, { retryCount: 0 })
+  const owner = '0x1111111111111111111111111111111111111111'
+  await assert.rejects(readBalances(client, [owner], assetsFor(net), 30_000_000n))
+  assert.deepEqual(elsewhere, [])
+  assert.ok(rpcCalls > 0, 'the balance read reached the RPC')
+})
+
+test('an RPC that answers with a redirect is not followed to another host', async (t) => {
+  // Two servers on this machine only: one plays the RPC, the other is where
+  // its redirect points.
+  const listen = async (handler) => {
+    const server = createServer(handler).listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    t.after(() => {
+      server.closeAllConnections()
+      server.close()
+    })
+    return `http://127.0.0.1:${server.address().port}/`
+  }
+  const followed = []
+  const elsewhere = await listen((req, res) => {
+    followed.push(req.method)
+    req.resume()
+    res.end('{}')
+  })
+  // 302 would be followed as a GET; 307 would send the request body on too.
+  for (const status of [302, 307]) {
+    let asked = 0
+    const rpc = await listen((req, res) => {
+      asked++
+      req.resume()
+      res.writeHead(status, { Location: elsewhere }).end()
+    })
+    const client = makeClient(NETWORKS.mainnet, rpc, { retryCount: 0 })
+    await assert.rejects(client.getBlockNumber())
+    assert.equal(asked, 1, `the RPC was asked, and answered ${status}`)
+  }
+  assert.deepEqual(followed, [])
 })
